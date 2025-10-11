@@ -1,0 +1,2093 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Advanced MT5 Trading Monitor GUI with Strategy Phase Tracking
+Real-time candlestick charts, configuration viewer, and strategy state monitoring
+"""
+
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox
+import threading
+import time
+import json
+import os
+import sys
+from datetime import datetime, timedelta
+import logging
+from typing import Dict, List, Optional, Any, Tuple
+import importlib.util
+import queue
+
+# Try to import charting libraries
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+    import matplotlib.dates as mdates
+    from matplotlib.patches import Rectangle
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+
+# Dynamic imports to avoid VS Code warnings
+def dynamic_import(module_name: str, package_name: Optional[str] = None):
+    """Dynamically import modules to avoid static import warnings"""
+    try:
+        if package_name:
+            spec = importlib.util.find_spec(f"{package_name}.{module_name}")
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+        
+        spec = importlib.util.find_spec(module_name)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    except (ImportError, ModuleNotFoundError):
+        pass
+    return None
+
+# Try to import required modules
+try:
+    import MetaTrader5 as mt5
+    import pandas as pd
+    import numpy as np
+    DEPENDENCIES_AVAILABLE = True
+except ImportError as e:
+    DEPENDENCIES_AVAILABLE = False
+    mt5 = None
+    pd = None
+    np = None
+
+# Dynamic import of signal processing modules
+sunrise_signal_adapter = dynamic_import("sunrise_signal_adapter", "src")
+if not sunrise_signal_adapter:
+    # Try alternative import paths
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+    sunrise_signal_adapter = dynamic_import("sunrise_signal_adapter")
+
+class AdvancedMT5TradingMonitorGUI:
+    """
+    Advanced MT5 Trading Monitor with Strategy Phase Tracking
+    
+    Features:
+    - Real-time strategy phase tracking (NORMAL → WAITING_PULLBACK → WAITING_BREAKOUT)
+    - Live candlestick charts with indicators and window markers
+    - Detailed configuration parameter viewer for each asset
+    - Terminal-style phase output with color-coded states
+    - Window breakout level visualization
+    - EMA crossover and pullback monitoring
+    """
+    
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Advanced MT5 Monitor - Strategy Phase Tracker")
+        self.root.geometry("1600x1000")
+        
+        # Strategy state tracking
+        self.strategy_states = {}  # {symbol: {phase, config, indicators, etc}}
+        self.strategy_configs = {}
+        self.chart_data = {}
+        self.window_markers = {}  # Track window levels for charts
+        
+        # State variables
+        self.mt5_connected = False
+        self.monitoring_active = False
+        self.positions = []
+        self.signals_history = []
+        self.connection_history = []
+        self.signal_manager = None
+        self.data_provider = None
+        
+        # Threading and communication
+        self.monitor_thread = None
+        self.stop_event = threading.Event()
+        self.phase_update_queue = queue.Queue()
+        
+        # Setup logging
+        self.setup_logging()
+        
+        # Initialize GUI
+        self.setup_gui()
+        
+        # Try to initialize MT5 connection
+        self.initialize_mt5_connection()
+        
+        # Load strategy configurations
+        self.load_strategy_configurations()
+        
+        # Setup cleanup
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Start phase update processing
+        self.process_phase_updates()
+        
+    def setup_logging(self):
+        """Configure logging system"""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler('mt5_advanced_monitor.log')
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+        
+    def setup_gui(self):
+        """Initialize the advanced GUI components"""
+        # Create main paned window
+        main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Left panel - Strategy monitoring and configuration
+        left_frame = ttk.Frame(main_paned)
+        main_paned.add(left_frame, weight=1)
+        
+        # Right panel - Charts and terminal output
+        right_frame = ttk.Frame(main_paned)
+        main_paned.add(right_frame, weight=2)
+        
+        # Setup left panel
+        self.setup_left_panel(left_frame)
+        
+        # Setup right panel
+        self.setup_right_panel(right_frame)
+        
+        # Status bar
+        self.create_status_bar()
+        
+    def setup_left_panel(self, parent):
+        """Setup the left panel with strategy monitoring"""
+        # Connection status
+        conn_frame = ttk.LabelFrame(parent, text="Connection Status", padding="5")
+        conn_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        self.connection_status_label = ttk.Label(conn_frame, text="Disconnected", foreground="red", font=("Arial", 10, "bold"))
+        self.connection_status_label.pack(side=tk.LEFT)
+        
+        self.connect_button = ttk.Button(conn_frame, text="Connect", command=self.toggle_connection)
+        self.connect_button.pack(side=tk.RIGHT)
+        
+        # Control buttons
+        control_frame = ttk.LabelFrame(parent, text="Monitoring Controls", padding="5")
+        control_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        self.start_button = ttk.Button(control_frame, text="Start Monitoring", command=self.start_monitoring)
+        self.start_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.stop_button = ttk.Button(control_frame, text="Stop Monitoring", command=self.stop_monitoring, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT)
+        
+        # Strategy phase tracking
+        phase_frame = ttk.LabelFrame(parent, text="Strategy Phase Tracking", padding="5")
+        phase_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        # Create notebook for different views
+        self.left_notebook = ttk.Notebook(phase_frame)
+        self.left_notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Strategy phases tab
+        self.create_strategy_phases_tab()
+        
+        # Configuration tab
+        self.create_configuration_tab()
+        
+        # Indicators tab
+        self.create_indicators_tab()
+        
+    def setup_right_panel(self, parent):
+        """Setup the right panel with charts and terminal"""
+        # Create notebook for different views
+        self.right_notebook = ttk.Notebook(parent)
+        self.right_notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Charts tab
+        if MATPLOTLIB_AVAILABLE:
+            self.create_charts_tab()
+        else:
+            self.create_no_charts_tab()
+            
+        # Terminal output tab
+        self.create_terminal_tab()
+        
+        # Window markers tab
+        self.create_window_markers_tab()
+        
+    def create_strategy_phases_tab(self):
+        """Create the strategy phase tracking tab"""
+        phases_frame = ttk.Frame(self.left_notebook)
+        self.left_notebook.add(phases_frame, text="📊 Strategy Phases")
+        
+        # Strategy list with phases
+        columns = ("Symbol", "Phase", "Direction", "Pullback Count", "Window Active", "Last Update")
+        self.phases_tree = ttk.Treeview(phases_frame, columns=columns, show="headings", height=12)
+        
+        for col in columns:
+            self.phases_tree.heading(col, text=col)
+            if col == "Symbol":
+                self.phases_tree.column(col, width=80)
+            elif col == "Phase":
+                self.phases_tree.column(col, width=120)
+            else:
+                self.phases_tree.column(col, width=90)
+                
+        scrollbar_phases = ttk.Scrollbar(phases_frame, orient=tk.VERTICAL, command=self.phases_tree.yview)
+        self.phases_tree.configure(yscrollcommand=scrollbar_phases.set)
+        
+        self.phases_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar_phases.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind selection event
+        self.phases_tree.bind("<<TreeviewSelect>>", self.on_strategy_phase_select)
+        
+    def create_configuration_tab(self):
+        """Create the configuration viewer tab"""
+        config_frame = ttk.Frame(self.left_notebook)
+        self.left_notebook.add(config_frame, text="⚙️ Configuration")
+        
+        # Symbol selector
+        selector_frame = ttk.Frame(config_frame)
+        selector_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(selector_frame, text="Symbol:").pack(side=tk.LEFT)
+        self.symbol_var = tk.StringVar()
+        self.symbol_combo = ttk.Combobox(selector_frame, textvariable=self.symbol_var, state="readonly", width=15)
+        self.symbol_combo.pack(side=tk.LEFT, padx=(5, 0))
+        self.symbol_combo.bind("<<ComboboxSelected>>", self.on_symbol_config_select)
+        
+        # Configuration display
+        self.config_text = scrolledtext.ScrolledText(config_frame, height=15, font=("Consolas", 9))
+        self.config_text.pack(fill=tk.BOTH, expand=True)
+        
+    def create_indicators_tab(self):
+        """Create the technical indicators tab"""
+        indicators_frame = ttk.Frame(self.left_notebook)
+        self.left_notebook.add(indicators_frame, text="📈 Indicators")
+        
+        # Indicators display
+        self.indicators_text = scrolledtext.ScrolledText(indicators_frame, height=15, font=("Consolas", 9))
+        self.indicators_text.pack(fill=tk.BOTH, expand=True)
+        
+    def create_charts_tab(self):
+        """Create the live charts tab"""
+        charts_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(charts_frame, text="📊 Live Charts")
+        
+        # Chart controls
+        control_frame = ttk.Frame(charts_frame)
+        control_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(control_frame, text="Chart Symbol:").pack(side=tk.LEFT)
+        self.chart_symbol_var = tk.StringVar(value="EURUSD")
+        chart_symbol_combo = ttk.Combobox(control_frame, textvariable=self.chart_symbol_var, 
+                                         values=["EURUSD", "XAUUSD", "GBPUSD", "AUDUSD", "XAGUSD", "USDCHF"],
+                                         state="readonly", width=10)
+        chart_symbol_combo.pack(side=tk.LEFT, padx=(5, 10))
+        chart_symbol_combo.bind("<<ComboboxSelected>>", self.on_chart_symbol_change)
+        
+        ttk.Button(control_frame, text="Refresh Chart", command=self.refresh_chart).pack(side=tk.LEFT)
+        
+        # Chart display
+        self.setup_chart(charts_frame)
+        
+    def create_no_charts_tab(self):
+        """Create a tab explaining chart requirements"""
+        no_charts_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(no_charts_frame, text="📊 Charts (Unavailable)")
+        
+        info_label = ttk.Label(no_charts_frame, text="Charts require matplotlib and mplfinance libraries.\n\n"
+                                                    "Install with: pip install matplotlib mplfinance\n\n"
+                                                    "Strategy monitoring and configuration viewing are still available.",
+                              justify=tk.CENTER, font=("Arial", 11))
+        info_label.pack(expand=True)
+        
+    def create_terminal_tab(self):
+        """Create the terminal output tab"""
+        terminal_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(terminal_frame, text="🖥️ Terminal Output")
+        
+        # Terminal display
+        self.terminal_text = scrolledtext.ScrolledText(terminal_frame, height=25, font=("Consolas", 9), 
+                                                      bg="black", fg="green", insertbackground="white")
+        self.terminal_text.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        # Configure terminal colors
+        self.terminal_text.tag_config("NORMAL", foreground="white")
+        self.terminal_text.tag_config("WAITING_PULLBACK", foreground="yellow")
+        self.terminal_text.tag_config("WAITING_BREAKOUT", foreground="orange")
+        self.terminal_text.tag_config("SIGNAL", foreground="cyan")
+        self.terminal_text.tag_config("ERROR", foreground="red")
+        self.terminal_text.tag_config("SUCCESS", foreground="lime")
+        
+        # Terminal controls
+        terminal_controls = ttk.Frame(terminal_frame)
+        terminal_controls.pack(fill=tk.X)
+        
+        ttk.Button(terminal_controls, text="Clear Terminal", command=self.clear_terminal).pack(side=tk.LEFT)
+        ttk.Button(terminal_controls, text="Save Log", command=self.save_terminal_log).pack(side=tk.LEFT, padx=(5, 0))
+        
+    def create_window_markers_tab(self):
+        """Create the window markers tracking tab"""
+        markers_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(markers_frame, text="🎯 Window Markers")
+        
+        # Window markers display
+        columns = ("Symbol", "Direction", "Window Start", "Window End", "Breakout Level", "Status")
+        self.markers_tree = ttk.Treeview(markers_frame, columns=columns, show="headings", height=20)
+        
+        for col in columns:
+            self.markers_tree.heading(col, text=col)
+            self.markers_tree.column(col, width=100)
+            
+        scrollbar_markers = ttk.Scrollbar(markers_frame, orient=tk.VERTICAL, command=self.markers_tree.yview)
+        self.markers_tree.configure(yscrollcommand=scrollbar_markers.set)
+        
+        self.markers_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar_markers.pack(side=tk.RIGHT, fill=tk.Y)
+        
+    def setup_chart(self, parent):
+        """Setup matplotlib chart"""
+        if not MATPLOTLIB_AVAILABLE:
+            return
+            
+        # Create figure and axis
+        self.fig = Figure(figsize=(12, 8), dpi=100)
+        self.ax = self.fig.add_subplot(111)
+        
+        # Create canvas
+        self.canvas = FigureCanvasTkAgg(self.fig, parent)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Initialize empty chart
+        self.ax.set_title("Live Chart - Select Symbol")
+        self.ax.set_xlabel("Time")
+        self.ax.set_ylabel("Price")
+        self.fig.tight_layout()
+        
+    def create_status_bar(self):
+        """Create the status bar at the bottom"""
+        self.status_frame = ttk.Frame(self.root)
+        self.status_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        
+        self.status_label = ttk.Label(self.status_frame, text="Ready", relief=tk.SUNKEN, anchor=tk.W)
+        self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 2), pady=2)
+        
+        self.time_label = ttk.Label(self.status_frame, text="", relief=tk.SUNKEN, anchor=tk.E, width=20)
+        self.time_label.pack(side=tk.RIGHT, padx=(2, 5), pady=2)
+        
+        # Update time every second
+        self.update_time()
+        
+    def update_time(self):
+        """Update the time display"""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.time_label.config(text=current_time)
+        self.root.after(1000, self.update_time)
+        
+    def load_strategy_configurations(self):
+        """Load strategy configuration parameters"""
+        symbols = ["EURUSD", "GBPUSD", "XAUUSD", "AUDUSD", "XAGUSD", "USDCHF"]
+        
+        for symbol in symbols:
+            try:
+                # Initialize strategy state - matching original strategy state machine
+                self.strategy_states[symbol] = {
+                    'entry_state': 'SCANNING',  # SCANNING, ARMED_LONG, ARMED_SHORT, WINDOW_OPEN
+                    'phase': 'NORMAL',  # For display compatibility
+                    'armed_direction': None,
+                    'pullback_candle_count': 0,
+                    'signal_trigger_candle': None,  # Store trigger candle data
+                    'last_pullback_candle_high': None,
+                    'last_pullback_candle_low': None,
+                    'window_active': False,
+                    'window_bar_start': None,
+                    'window_expiry_bar': None,
+                    'window_top_limit': None,
+                    'window_bottom_limit': None,
+                    'current_bar': 0,
+                    'breakout_level': None,
+                    'last_update': datetime.now(),
+                    'indicators': {},
+                    'signals': [],
+                    'crossover_data': {}
+                }
+                
+                # Load configuration from strategy file
+                strategy_file = f"strategies/sunrise_ogle_{symbol.lower()}.py"
+                config = self.parse_strategy_config(strategy_file, symbol)
+                self.strategy_configs[symbol] = config
+                
+                self.terminal_log(f"✅ {symbol}: Configuration loaded", "SUCCESS")
+                
+            except Exception as e:
+                self.terminal_log(f"❌ {symbol}: Config load error - {str(e)}", "ERROR")
+                self.strategy_configs[symbol] = {"error": str(e)}
+                
+        # Update symbol selector
+        self.symbol_combo['values'] = list(symbols)
+        if symbols:
+            self.symbol_combo.set(symbols[0])
+            self.on_symbol_config_select(None)
+            
+    def parse_strategy_config(self, file_path, symbol):
+        """Parse strategy configuration from file"""
+        config = {}
+        
+        if not os.path.exists(file_path):
+            return {"error": f"Strategy file not found: {file_path}"}
+            
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(file_path, 'r', encoding='latin-1') as f:
+                content = f.read()
+                
+        # Parse key configuration parameters with more comprehensive coverage
+        config_params = {
+            # EMA Parameters - Different per asset
+            'ema_fast_length': 'Fast EMA Period',
+            'ema_medium_length': 'Medium EMA Period', 
+            'ema_slow_length': 'Slow EMA Period',
+            'ema_confirm_length': 'Confirmation EMA Period',
+            'ema_filter_price_length': 'Price Filter EMA Period',
+            'ema_exit_length': 'Exit EMA Period',
+            
+            # ATR Risk Management
+            'atr_length': 'ATR Period',
+            'long_atr_sl_multiplier': 'Long Stop Loss ATR Multiplier',
+            'long_atr_tp_multiplier': 'Long Take Profit ATR Multiplier',
+            
+            # ATR Filters
+            'LONG_USE_ATR_FILTER': 'Use ATR Volatility Filter',
+            'LONG_ATR_MIN_THRESHOLD': 'ATR Min Threshold',
+            'LONG_ATR_MAX_THRESHOLD': 'ATR Max Threshold',
+            'LONG_USE_ATR_INCREMENT_FILTER': 'Use ATR Increment Filter',
+            'LONG_ATR_INCREMENT_MIN_THRESHOLD': 'ATR Increment Min',
+            'LONG_ATR_INCREMENT_MAX_THRESHOLD': 'ATR Increment Max',
+            'LONG_USE_ATR_DECREMENT_FILTER': 'Use ATR Decrement Filter',
+            'LONG_ATR_DECREMENT_MIN_THRESHOLD': 'ATR Decrement Min',
+            'LONG_ATR_DECREMENT_MAX_THRESHOLD': 'ATR Decrement Max',
+            
+            # Entry Filters
+            'LONG_USE_EMA_ORDER_CONDITION': 'Use EMA Order Condition',
+            'LONG_USE_PRICE_FILTER_EMA': 'Use Price Filter EMA',
+            'LONG_USE_CANDLE_DIRECTION_FILTER': 'Use Candle Direction Filter',
+            'LONG_USE_ANGLE_FILTER': 'Use EMA Angle Filter',
+            'LONG_MIN_ANGLE': 'Min EMA Angle (degrees)',
+            'LONG_MAX_ANGLE': 'Max EMA Angle (degrees)',
+            'LONG_ANGLE_SCALE_FACTOR': 'Angle Scale Factor',
+            
+            # Pullback Entry System
+            'LONG_USE_PULLBACK_ENTRY': 'Use Pullback Entry System',
+            'LONG_PULLBACK_MAX_CANDLES': 'Max Pullback Candles',
+            'LONG_ENTRY_WINDOW_PERIODS': 'Entry Window Periods',
+            'WINDOW_OFFSET_MULTIPLIER': 'Window Offset Multiplier',
+            'USE_WINDOW_TIME_OFFSET': 'Use Window Time Offset',
+            'WINDOW_PRICE_OFFSET_MULTIPLIER': 'Window Price Offset',
+            
+            # Time Range Filter
+            'USE_TIME_RANGE_FILTER': 'Use Time Range Filter',
+            'ENTRY_START_HOUR': 'Entry Start Hour (UTC)',
+            'ENTRY_START_MINUTE': 'Entry Start Minute',
+            'ENTRY_END_HOUR': 'Entry End Hour (UTC)',
+            'ENTRY_END_MINUTE': 'Entry End Minute',
+            
+            # Trading Direction
+            'ENABLE_LONG_TRADES': 'Enable Long Trades',
+            'ENABLE_SHORT_TRADES': 'Enable Short Trades',
+            
+            # Position Sizing
+            'enable_risk_sizing': 'Enable Risk Sizing',
+            'risk_percent': 'Risk Percentage per Trade',
+        }
+        
+        for param, description in config_params.items():
+            # Find parameter in file content - check BOTH formats
+            lines = content.split('\n')
+            for line in lines:
+                # Format 1: param = value (top level)
+                # Format 2: param=value, (inside params dict)
+                if (f"{param} =" in line or f"{param}=" in line) and not line.strip().startswith('#'):
+                    try:
+                        # Extract value
+                        if '=' in line:
+                            value_part = line.split('=')[1].split('#')[0].split(',')[0].strip()
+                            # Clean up the value (remove quotes, trailing commas)
+                            if value_part.endswith(','):
+                                value_part = value_part[:-1].strip()
+                            if value_part.startswith('"') and value_part.endswith('"'):
+                                value_part = value_part[1:-1]
+                            elif value_part.startswith("'") and value_part.endswith("'"):
+                                value_part = value_part[1:-1]
+                            config[description] = value_part
+                            # Store with original param name too for easier access
+                            config[param] = value_part
+                            break
+                    except:
+                        continue
+        
+        # Store raw config for indicator calculations
+        config['_symbol'] = symbol
+        config['_raw_content'] = content[:1000]  # First 1000 chars for reference
+                        
+        return config
+        
+    def initialize_mt5_connection(self):
+        """Initialize MetaTrader5 connection"""
+        if not DEPENDENCIES_AVAILABLE:
+            self.terminal_log("❌ ERROR: Required dependencies not available", "ERROR")
+            return False
+            
+        try:
+            # Initialize MT5
+            if not mt5.initialize():
+                self.terminal_log(f"❌ Failed to initialize MT5: {mt5.last_error()}", "ERROR")
+                return False
+                
+            # Get account info
+            account_info = mt5.account_info()
+            if account_info is None:
+                self.terminal_log("❌ Failed to get account info", "ERROR")
+                mt5.shutdown()
+                return False
+                
+            self.mt5_connected = True
+            self.connection_status_label.config(text="Connected", foreground="green")
+            self.connect_button.config(text="Disconnect")
+            
+            self.terminal_log(f"✅ Connected to MT5 - Account: {account_info.login}", "SUCCESS")
+            
+            # Initialize signal processing if available
+            self.initialize_signal_processing()
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"❌ Connection error: {str(e)}", "ERROR")
+            return False
+            
+    def initialize_signal_processing(self):
+        """Initialize signal processing components"""
+        try:
+            if sunrise_signal_adapter:
+                # Try to create signal manager
+                if hasattr(sunrise_signal_adapter, 'MultiSymbolSignalManager'):
+                    self.signal_manager = sunrise_signal_adapter.MultiSymbolSignalManager()
+                    
+                    # Add symbols
+                    symbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'AUDUSD', 'XAGUSD', 'USDCHF']
+                    for symbol in symbols:
+                        try:
+                            self.signal_manager.add_symbol(symbol)
+                        except Exception as e:
+                            self.terminal_log(f"⚠️ Could not add {symbol}: {str(e)}", "ERROR")
+                    
+                    self.terminal_log("✅ Signal processing initialized", "SUCCESS")
+                    
+        except Exception as e:
+            self.terminal_log(f"⚠️ Signal processing error: {str(e)}", "ERROR")
+            
+    def start_monitoring(self):
+        """Start the advanced monitoring process"""
+        if not self.mt5_connected:
+            self.terminal_log("❌ Cannot start monitoring: Not connected to MT5", "ERROR")
+            return
+            
+        if self.monitoring_active:
+            return
+            
+        self.monitoring_active = True
+        self.stop_event.clear()
+        
+        # Update GUI
+        self.start_button.config(state=tk.DISABLED)
+        self.stop_button.config(state=tk.NORMAL)
+        self.status_label.config(text="Advanced Monitoring Active")
+        
+        # Start monitoring thread
+        self.monitor_thread = threading.Thread(target=self.advanced_monitoring_loop, daemon=True)
+        self.monitor_thread.start()
+        
+        self.terminal_log("=" * 60, "SUCCESS", critical=True)
+        self.terminal_log("🚀 BOT IS LIVE - Advanced Monitoring Active", "SUCCESS", critical=True)
+        self.terminal_log("📊 Tracking: EMA crossovers, Phase changes, Entry signals", "SUCCESS", critical=True)
+        self.terminal_log("=" * 60, "SUCCESS", critical=True)
+        
+    def stop_monitoring(self):
+        """Stop the monitoring process"""
+        self.monitoring_active = False
+        self.stop_event.set()
+        
+        # Update GUI
+        self.start_button.config(state=tk.NORMAL)
+        self.stop_button.config(state=tk.DISABLED)
+        self.status_label.config(text="Monitoring Stopped")
+        
+        self.terminal_log("⏹️ Monitoring stopped", "NORMAL")
+        
+    def advanced_monitoring_loop(self):
+        """Advanced monitoring loop with strategy phase tracking"""
+        last_summary = time.time()
+        
+        while self.monitoring_active and not self.stop_event.is_set():
+            try:
+                # Monitor each strategy's phase
+                for symbol in self.strategy_states.keys():
+                    self.monitor_strategy_phase(symbol)
+                
+                # Update displays
+                self.root.after(0, self.update_strategy_displays)
+                
+                # Log phase summary every 30 seconds
+                if time.time() - last_summary >= 30:
+                    self.log_phase_summary()
+                    last_summary = time.time()
+                
+                # Wait before next iteration
+                time.sleep(2)  # Update every 2 seconds
+                
+            except Exception as e:
+                self.terminal_log(f"❌ Monitoring error: {str(e)}", "ERROR")
+                time.sleep(5)
+                
+    def monitor_strategy_phase(self, symbol):
+        """Monitor individual strategy phase and state"""
+        try:
+            if not mt5:
+                return
+                
+            # Get current market data
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 100)
+            if rates is None or len(rates) < 50:
+                return
+                
+            # Convert to DataFrame
+            df = pd.DataFrame(rates)
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            
+            # Calculate indicators
+            indicators = self.calculate_indicators(df, symbol)
+            
+            # Simulate strategy phase logic (simplified)
+            current_phase = self.determine_strategy_phase(symbol, df, indicators)
+            
+            # Update strategy state
+            state = self.strategy_states[symbol]
+            
+            if state['phase'] != current_phase:
+                # Phase changed - log transition with more detail
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                transition_msg = f"📊 {symbol}: {state['phase']} → {current_phase}"
+                
+                # Add context based on phase
+                if current_phase == 'WAITING_PULLBACK':
+                    transition_msg += f" | Signal detected, waiting for pullback"
+                elif current_phase == 'WAITING_BREAKOUT':
+                    pullback_count = np.random.randint(1, 4)  # Simulate pullback count
+                    state['pullback_count'] = pullback_count
+                    transition_msg += f" | Pullback complete ({pullback_count} candles), window opening"
+                    state['window_active'] = True
+                elif current_phase == 'NORMAL':
+                    if state['phase'] == 'WAITING_BREAKOUT':
+                        transition_msg += f" | Window expired or breakout occurred"
+                    else:
+                        transition_msg += f" | Signal invalidated, reset to scanning"
+                    state['window_active'] = False
+                    state['pullback_count'] = 0
+                
+                # Add price and indicator context
+                current_price = indicators.get('current_price', 0)
+                trend = indicators.get('trend', 'UNKNOWN')
+                transition_msg += f" | Price: {current_price:.5f} | Trend: {trend}"
+                
+                self.terminal_log(transition_msg, current_phase.replace('WAITING_', ''))
+                state['phase'] = current_phase
+                
+                # Log to all-assets terminal summary
+                self.log_phase_summary()
+                
+            # Update indicators and timestamp
+            state['indicators'] = indicators
+            state['last_update'] = datetime.now()
+            
+            # Store chart data
+            self.chart_data[symbol] = {
+                'df': df.tail(50),  # Keep last 50 bars for charting
+                'indicators': indicators,
+                'timestamp': datetime.now()
+            }
+            
+        except Exception as e:
+            self.terminal_log(f"❌ {symbol} monitoring error: {str(e)}", "ERROR")
+            
+    def detect_ema_crossovers(self, symbol, indicators, df):
+        """Detect EMA crossovers ONLY ON CLOSED CANDLES (matching Backtrader behavior)
+        
+        ⚠️ CRITICAL: In Backtrader, next() is called once per CLOSED CANDLE, not per tick.
+        For M5 timeframe: next() every 5 minutes (when candle closes)
+        For H1 timeframe: next() every 60 minutes (when candle closes)
+        
+        This function MUST only process crossovers when a new candle closes to avoid
+        false crossovers from recalculating EMAs with forming candle data.
+        """
+        
+        # Only check if we have enough data
+        if len(df) < 2:
+            return
+        
+        try:
+            # Use second-to-last candle (last CLOSED candle) for signal detection
+            # The last candle (df[-1]) is the FORMING candle and should not trigger signals
+            current_closed_candle_time = df['time'].iloc[-2] if len(df) >= 2 else None
+            
+            # Check if we've already processed this closed candle for crossovers
+            state = self.strategy_states.get(symbol, {})
+            last_processed_candle = state.get('last_crossover_check_candle', None)
+            
+            if current_closed_candle_time == last_processed_candle:
+                # Already processed this closed candle - skip to avoid duplicate signals
+                return
+            
+            # NEW CLOSED CANDLE - process crossovers
+            # self.terminal_log(f"🕐 {symbol}: New closed candle detected at {current_closed_candle_time} - checking crossovers", 
+            #                 "INFO", critical=False)
+            
+            # Mark this candle as processed
+            state['last_crossover_check_candle'] = current_closed_candle_time
+            
+            # Calculate EMAs on CLOSED candles only (exclude the forming candle)
+            df_closed = df[:-1]  # Exclude the last (forming) candle
+            
+            if len(df_closed) < 20:
+                return  # Need enough data for EMA calculation
+            
+            # Get strategy-specific parameters
+            config = self.strategy_configs.get(symbol, {})
+            fast_period = self.extract_numeric_value(config.get('ema_fast_length', '18'))
+            medium_period = self.extract_numeric_value(config.get('ema_medium_length', '18'))
+            slow_period = self.extract_numeric_value(config.get('ema_slow_length', '50'))
+            confirm_period = 1  # Confirm EMA is always 1-period (close price)
+            
+            # Calculate EMAs on CLOSED candles only
+            ema_confirm_series = df_closed['close'].ewm(span=confirm_period).mean()
+            ema_fast_series = df_closed['close'].ewm(span=fast_period).mean()
+            ema_medium_series = df_closed['close'].ewm(span=medium_period).mean()
+            ema_slow_series = df_closed['close'].ewm(span=slow_period).mean()
+            
+            # Get current and previous EMA values (last 2 closed candles)
+            if len(ema_confirm_series) < 2:
+                return
+            
+            confirm_ema = ema_confirm_series.iloc[-1]
+            fast_ema = ema_fast_series.iloc[-1]
+            medium_ema = ema_medium_series.iloc[-1]
+            slow_ema = ema_slow_series.iloc[-1]
+            
+            prev_confirm = ema_confirm_series.iloc[-2]
+            prev_fast = ema_fast_series.iloc[-2]
+            prev_medium = ema_medium_series.iloc[-2]
+            prev_slow = ema_slow_series.iloc[-2]
+            
+            # Initialize crossover flags
+            bullish_crossover = False
+            bearish_crossover = False
+            
+            # Detect BULLISH crossovers (confirm EMA crosses ABOVE)
+            if confirm_ema > fast_ema and prev_confirm <= prev_fast:
+                self.terminal_log(f"🟢 {symbol}: Confirm EMA CROSSED ABOVE Fast EMA - BULLISH SIGNAL! (Candle: {current_closed_candle_time})", 
+                                "SUCCESS", critical=True)
+                bullish_crossover = True
+            
+            if confirm_ema > medium_ema and prev_confirm <= prev_medium:
+                self.terminal_log(f"🟢 {symbol}: Confirm EMA CROSSED ABOVE Medium EMA - BULLISH SIGNAL! (Candle: {current_closed_candle_time})", 
+                                "SUCCESS", critical=True)
+                bullish_crossover = True
+            
+            if confirm_ema > slow_ema and prev_confirm <= prev_slow:
+                self.terminal_log(f"🟢 {symbol}: Confirm EMA CROSSED ABOVE Slow EMA - BULLISH SIGNAL! (Candle: {current_closed_candle_time})", 
+                                "SUCCESS", critical=True)
+                bullish_crossover = True
+            
+            # Detect BEARISH crossovers (confirm EMA crosses BELOW)
+            if confirm_ema < fast_ema and prev_confirm >= prev_fast:
+                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW Fast EMA - BEARISH SIGNAL! (Candle: {current_closed_candle_time})", 
+                                "ERROR", critical=True)
+                bearish_crossover = True
+            
+            if confirm_ema < medium_ema and prev_confirm >= prev_medium:
+                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW Medium EMA - BEARISH SIGNAL! (Candle: {current_closed_candle_time})", 
+                                "ERROR", critical=True)
+                bearish_crossover = True
+            
+            if confirm_ema < slow_ema and prev_confirm >= prev_slow:
+                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW Slow EMA - BEARISH SIGNAL! (Candle: {current_closed_candle_time})", 
+                                "ERROR", critical=True)
+                bearish_crossover = True
+            
+            # Store crossover data for phase logic
+            if symbol in self.strategy_states:
+                self.strategy_states[symbol]['crossover_data'] = {
+                    'bullish_crossover': bullish_crossover,
+                    'bearish_crossover': bearish_crossover,
+                    'candle_time': current_closed_candle_time
+                }
+            
+        except Exception as e:
+            self.terminal_log(f"❌ Crossover detection error for {symbol}: {str(e)}", "ERROR", critical=True)
+    
+    def calculate_indicators(self, df, symbol):
+        """Calculate technical indicators using actual strategy parameters"""
+        indicators = {}
+        
+        try:
+            # Get strategy-specific parameters
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Debug: log the config keys (remove after testing)
+            # self.terminal_log(f"📊 {symbol} config keys: {list(config.keys())}", "NORMAL")
+            
+            # Extract EMA periods from config (using correct parameter names from strategy)
+            fast_period = self.extract_numeric_value(config.get('ema_fast_length', 
+                                                    config.get('Fast EMA Period', '18')))
+            medium_period = self.extract_numeric_value(config.get('ema_medium_length', 
+                                                      config.get('Medium EMA Period', '18')))  
+            slow_period = self.extract_numeric_value(config.get('ema_slow_length', 
+                                                    config.get('Slow EMA Period', '24')))
+            filter_period = self.extract_numeric_value(config.get('ema_filter_price_length', 
+                                                      config.get('Price Filter EMA Period', '100')))
+            atr_period = self.extract_numeric_value(config.get('atr_length', 
+                                                  config.get('ATR Period', '10')))
+            
+            # self.terminal_log(f"📊 {symbol} periods - Fast: {fast_period}, Medium: {medium_period}, Slow: {slow_period}, Filter: {filter_period}, ATR: {atr_period}", "NORMAL")
+            
+            # Ensure we have enough data
+            if df is None or len(df) < max(fast_period, medium_period, slow_period, filter_period, atr_period):
+                self.terminal_log(f"⚠️ Insufficient data for {symbol}: {len(df) if df is not None else 'None'} bars", "WARNING")
+                return indicators
+            
+            # Calculate EMAs with actual periods
+            indicators['ema_fast'] = df['close'].ewm(span=fast_period).mean().iloc[-1]
+            indicators['ema_medium'] = df['close'].ewm(span=medium_period).mean().iloc[-1]
+            indicators['ema_slow'] = df['close'].ewm(span=slow_period).mean().iloc[-1]
+            indicators['ema_filter'] = df['close'].ewm(span=filter_period).mean().iloc[-1]
+            
+            # Store periods for display
+            indicators['ema_fast_period'] = fast_period
+            indicators['ema_medium_period'] = medium_period
+            indicators['ema_slow_period'] = slow_period
+            indicators['ema_filter_period'] = filter_period
+            
+            # ATR calculation
+            if len(df) > 1:
+                high_low = df['high'] - df['low']
+                high_close = np.abs(df['high'] - df['close'].shift())
+                low_close = np.abs(df['low'] - df['close'].shift())
+                ranges = pd.concat([high_low, high_close, low_close], axis=1)
+                true_range = np.max(ranges, axis=1)
+                indicators['atr'] = true_range.rolling(atr_period).mean().iloc[-1]
+            else:
+                indicators['atr'] = 0.0001
+                
+            indicators['atr_period'] = atr_period
+            
+            # Current price
+            indicators['current_price'] = df['close'].iloc[-1]
+            
+            # Calculate TP/SL levels using actual multipliers
+            sl_multiplier = self.extract_float_value(config.get('long_atr_sl_multiplier', 
+                                                     config.get('Long Stop Loss ATR Multiplier', '1.5')))
+            tp_multiplier = self.extract_float_value(config.get('long_atr_tp_multiplier', 
+                                                     config.get('Long Take Profit ATR Multiplier', '10.0')))
+            
+            if indicators.get('atr', 0) > 0:
+                indicators['sl_level'] = indicators['current_price'] - (indicators['atr'] * sl_multiplier)
+                indicators['tp_level'] = indicators['current_price'] + (indicators['atr'] * tp_multiplier)
+            else:
+                indicators['sl_level'] = 0
+                indicators['tp_level'] = 0
+                
+            indicators['sl_multiplier'] = sl_multiplier
+            indicators['tp_multiplier'] = tp_multiplier
+            
+            # Trend direction based on EMA alignment
+            if indicators['ema_fast'] > indicators['ema_medium'] > indicators['ema_slow']:
+                indicators['trend'] = 'BULLISH'
+            elif indicators['ema_fast'] < indicators['ema_medium'] < indicators['ema_slow']:
+                indicators['trend'] = 'BEARISH'
+            else:
+                indicators['trend'] = 'SIDEWAYS'
+                
+            # EMA array for charting
+            indicators['ema_fast_array'] = df['close'].ewm(span=fast_period).mean()
+            indicators['ema_medium_array'] = df['close'].ewm(span=medium_period).mean()
+            indicators['ema_slow_array'] = df['close'].ewm(span=slow_period).mean()
+            indicators['ema_filter_array'] = df['close'].ewm(span=filter_period).mean()
+            
+            # Add confirm EMA for crossover detection
+            indicators['ema_confirm'] = df['close'].ewm(span=1).mean().iloc[-1]
+            
+            # Detect EMA crossovers (critical events)
+            self.detect_ema_crossovers(symbol, indicators, df)
+            
+            # This message is now filtered as non-critical
+            self.terminal_log(f"✅ {symbol} indicators calculated successfully", "SUCCESS")
+                
+        except Exception as e:
+            self.terminal_log(f"❌ Error calculating indicators for {symbol}: {str(e)}", "ERROR", critical=True)
+            indicators['error'] = str(e)
+            
+        return indicators
+            
+        return indicators
+        
+    def extract_numeric_value(self, value_str):
+        """Extract numeric value from configuration string"""
+        if isinstance(value_str, (int, float)):
+            return int(value_str) if isinstance(value_str, float) else value_str
+        if isinstance(value_str, str):
+            # Remove common characters and extract number
+            import re
+            match = re.search(r'(\d+(?:\.\d+)?)', value_str)
+            if match:
+                return int(float(match.group(1)))  # Convert to int for periods
+        return 18  # Default fallback
+        
+    def extract_float_value(self, value_str):
+        """Extract float value from configuration string (for multipliers)"""
+        if isinstance(value_str, (int, float)):
+            return float(value_str)
+        if isinstance(value_str, str):
+            # Remove common characters and extract number
+            import re
+            match = re.search(r'(\d+(?:\.\d+)?)', value_str)
+            if match:
+                return float(match.group(1))
+        return 1.5  # Default fallback
+    
+    def _is_in_trading_time_range(self, dt, config):
+        """Check if current time is within trading hours (matching original strategy)"""
+        use_filter = config.get('USE_TIME_RANGE_FILTER', 'True')
+        if isinstance(use_filter, str):
+            use_filter = use_filter.lower() in ('true', '1', 'yes')
+        
+        if not use_filter:
+            return True  # No filter active
+        
+        # Get time range parameters
+        start_hour = int(config.get('ENTRY_START_HOUR', 0))
+        start_minute = int(config.get('ENTRY_START_MINUTE', 0))
+        end_hour = int(config.get('ENTRY_END_HOUR', 23))
+        end_minute = int(config.get('ENTRY_END_MINUTE', 59))
+        
+        # Convert to minutes for comparison
+        current_time_minutes = dt.hour * 60 + dt.minute
+        start_time_minutes = start_hour * 60 + start_minute
+        end_time_minutes = end_hour * 60 + end_minute
+        
+        if start_time_minutes <= end_time_minutes:
+            # Normal range (e.g., 09:00-17:00)
+            return start_time_minutes <= current_time_minutes <= end_time_minutes
+        else:
+            # Overnight range (e.g., 23:00-16:00)
+            return current_time_minutes >= start_time_minutes or current_time_minutes <= end_time_minutes
+    
+    def _reset_entry_state(self, symbol):
+        """Reset strategy state to SCANNING (matching original strategy)"""
+        state = self.strategy_states[symbol]
+        state['entry_state'] = 'SCANNING'
+        state['phase'] = 'NORMAL'
+        state['armed_direction'] = None
+        state['pullback_candle_count'] = 0
+        state['signal_trigger_candle'] = None
+        state['last_pullback_candle_high'] = None
+        state['last_pullback_candle_low'] = None
+        state['window_active'] = False
+        state['window_bar_start'] = None
+        state['window_expiry_bar'] = None
+        state['window_top_limit'] = None
+        state['window_bottom_limit'] = None
+    
+    def _phase3_open_breakout_window(self, symbol, armed_direction, config, current_bar):
+        """PHASE 3: Open the two-sided breakout window after pullback confirmation
+        
+        Implements true volatility expansion channel with:
+        - Optional time offset controlled by use_window_time_offset parameter
+        - Two-sided channel with success and failure boundaries
+        """
+        state = self.strategy_states[symbol]
+        
+        # 1. Implement Optional Time Offset
+        window_start_bar = current_bar
+        use_time_offset = config.get('USE_WINDOW_TIME_OFFSET', 'True')
+        if isinstance(use_time_offset, str):
+            use_time_offset = use_time_offset.lower() in ('true', '1', 'yes')
+        
+        if use_time_offset:
+            window_offset_multiplier = float(config.get('WINDOW_OFFSET_MULTIPLIER', 1.0))
+            time_offset = int(state['pullback_candle_count'] * window_offset_multiplier)
+            window_start_bar = current_bar + time_offset
+        
+        state['window_bar_start'] = window_start_bar
+        
+        # 2. Set Window Duration
+        if armed_direction == 'LONG':
+            window_periods = int(config.get('LONG_ENTRY_WINDOW_PERIODS', 7))
+        else:
+            window_periods = int(config.get('SHORT_ENTRY_WINDOW_PERIODS', 7))
+        
+        state['window_expiry_bar'] = window_start_bar + window_periods
+        
+        # 3. Calculate the Two-Sided Price Channel
+        last_high = state['last_pullback_candle_high']
+        last_low = state['last_pullback_candle_low']
+        candle_range = last_high - last_low
+        price_offset_multiplier = float(config.get('WINDOW_PRICE_OFFSET_MULTIPLIER', 0.5))
+        price_offset = candle_range * price_offset_multiplier
+        
+        state['window_top_limit'] = last_high + price_offset
+        state['window_bottom_limit'] = last_low - price_offset
+        
+        # 4. Final State Transition
+        state['entry_state'] = 'WINDOW_OPEN'
+        state['phase'] = 'WAITING_BREAKOUT'
+        state['window_active'] = True
+        
+        self.terminal_log(f"📈 {symbol}: Window opened - Top: {state['window_top_limit']:.5f}, Bottom: {state['window_bottom_limit']:.5f}", 
+                        "INFO", critical=False)
+    
+    def _phase4_monitor_window(self, symbol, df, armed_direction, current_bar, current_dt, config):
+        """PHASE 4: Monitor window for breakout
+        
+        Returns:
+            'PENDING' - Window not yet active (time offset)
+            'SUCCESS' - Breakout detected
+            'EXPIRED' - Window timeout
+            'FAILURE' - Failure boundary broken
+            None - Still monitoring
+        """
+        state = self.strategy_states[symbol]
+        
+        # Check window active (time offset)
+        if current_bar < state['window_bar_start']:
+            return 'PENDING'
+        
+        # Check window expiry (matches original Line 1414: if current_bar > self.window_expiry_bar)
+        if current_bar > state['window_expiry_bar']:
+            return 'EXPIRED'
+        
+        # Get current price data
+        if len(df) < 1:
+            return None
+        
+        current_high = df['high'].iloc[-1]
+        current_low = df['low'].iloc[-1]
+        
+        # Monitor breakouts (matches original Lines 1429-1447)
+        if armed_direction == 'LONG':
+            # SUCCESS: Price breaks above top limit (original Line 1429: current_high >= self.window_top_limit)
+            if current_high >= state['window_top_limit']:
+                # Final time check before success
+                if not self._is_in_trading_time_range(current_dt, config):
+                    self.terminal_log(f"⏰ {symbol}: Breakout detected but outside trading hours", 
+                                    "WARNING", critical=True)
+                    self._reset_entry_state(symbol)
+                    return 'EXPIRED'
+                return 'SUCCESS'
+            
+            # FAILURE: Price breaks below bottom limit (original Line 1435: current_low <= self.window_bottom_limit)
+            elif current_low <= state['window_bottom_limit']:
+                return 'FAILURE'
+        
+        else:  # SHORT
+            # SUCCESS: Price breaks below bottom limit (original Line 1445: current_low <= self.window_bottom_limit)
+            if current_low <= state['window_bottom_limit']:
+                # Final time check before success
+                if not self._is_in_trading_time_range(current_dt, config):
+                    self.terminal_log(f"⏰ {symbol}: Breakout detected but outside trading hours", 
+                                    "WARNING", critical=True)
+                    self._reset_entry_state(symbol)
+                    return 'EXPIRED'
+                return 'SUCCESS'
+            
+            # FAILURE: Price breaks above top limit (original Line 1451: current_high >= self.window_top_limit)
+            elif current_high >= state['window_top_limit']:
+                return 'FAILURE'
+        
+        return None  # Still monitoring
+        
+    def determine_strategy_phase(self, symbol, df, indicators):
+        """4-PHASE STATE MACHINE - Exact copy of original strategy logic
+        
+        States: SCANNING → ARMED_LONG/SHORT → WINDOW_OPEN → Entry/Reset
+        Matches: sunrise_ogle_*.py state machine exactly
+        """
+        current_state = self.strategy_states[symbol]
+        entry_state = current_state['entry_state']
+        config = self.strategy_configs.get(symbol, {})
+        
+        # Get SHORT enabled status
+        short_enabled = config.get('ENABLE_SHORT_TRADES', 'False')
+        if isinstance(short_enabled, str):
+            short_enabled = short_enabled.lower() in ('true', '1', 'yes')
+        
+        # Bar counter - only increment on NEW CANDLE (matches original strategy Line 1393: current_bar = len(self))
+        # Track candle timestamp to detect new candles
+        if len(df) > 0:
+            current_candle_time = df.index[-1]
+            
+            # Check if this is a new candle (timestamp changed)
+            if 'last_candle_time' not in current_state or current_state['last_candle_time'] != current_candle_time:
+                current_state['current_bar'] += 1
+                current_state['last_candle_time'] = current_candle_time
+        
+        current_bar = current_state['current_bar']
+        
+        # Get current time for time filter
+        if len(df) > 0:
+            current_dt = df.index[-1] if isinstance(df.index[-1], datetime) else datetime.now()
+        else:
+            current_dt = datetime.now()
+        
+        # ===================================================================
+        # TIME FILTER CHECK - MATCHING ORIGINAL STRATEGY
+        # ===================================================================
+        # Original strategy checks time filter at the START of pullback entry handler
+        # This prevents processing ANY state machine logic outside trading hours
+        if not self._is_in_trading_time_range(current_dt, config):
+            # Outside trading hours - skip all state machine processing
+            if entry_state != 'SCANNING':
+                # Log only if we have an active setup
+                self.terminal_log(f"⏰ {symbol}: Outside trading hours - state machine paused (Current: {entry_state})", 
+                                "INFO", critical=False)
+            return entry_state  # Return current state unchanged
+        
+        try:
+            # Get crossover data
+            crossover_data = current_state.get('crossover_data', {})
+            bullish_cross = crossover_data.get('bullish_crossover', False)
+            bearish_cross = crossover_data.get('bearish_crossover', False)
+            
+            # ===================================================================
+            # GLOBAL INVALIDATION RULE - Check ARMED states for opposing signals
+            # ===================================================================
+            # CRITICAL: Reset on opposing crossover REGARDLESS of short_enabled
+            # Original strategy (Line 1551-1583) always resets on opposing signal
+            if entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
+                opposing_signal = False
+                
+                # ARMED_LONG: Reset if bearish crossover detected (even if shorts disabled)
+                if entry_state == 'ARMED_LONG' and bearish_cross:
+                    opposing_signal = True
+                    self.terminal_log(f"⚠️ {symbol}: GLOBAL INVALIDATION - Bearish crossover detected in ARMED_LONG", 
+                                    "WARNING", critical=True)
+                
+                # ARMED_SHORT: Reset if bullish crossover detected
+                elif entry_state == 'ARMED_SHORT' and bullish_cross:
+                    opposing_signal = True
+                    self.terminal_log(f"⚠️ {symbol}: GLOBAL INVALIDATION - Bullish crossover detected in ARMED_SHORT", 
+                                    "WARNING", critical=True)
+                
+                if opposing_signal:
+                    self._reset_entry_state(symbol)
+                    entry_state = 'SCANNING'
+            
+            # ===================================================================
+            # STATE MACHINE ROUTER
+            # ===================================================================
+            
+            # ---------------------------------------------------------------
+            # PHASE 1: SCANNING → ARMED (Signal Detection)
+            # ---------------------------------------------------------------
+            if entry_state == 'SCANNING':
+                signal_direction = None
+                
+                # Check for LONG signal
+                if bullish_cross:
+                    signal_direction = 'LONG'
+                
+                # Check for SHORT signal (only if enabled)
+                elif bearish_cross and short_enabled:
+                    signal_direction = 'SHORT'
+                
+                # Transition to ARMED if signal detected
+                if signal_direction:
+                    current_state['entry_state'] = f"ARMED_{signal_direction}"
+                    current_state['phase'] = 'WAITING_PULLBACK'
+                    current_state['armed_direction'] = signal_direction
+                    current_state['pullback_candle_count'] = 0
+                    
+                    # Store trigger candle (using last closed candle from dataframe)
+                    if len(df) >= 2:
+                        current_state['signal_trigger_candle'] = {
+                            'open': float(df['open'].iloc[-2]),
+                            'close': float(df['close'].iloc[-2]),
+                            'high': float(df['high'].iloc[-2]),
+                            'low': float(df['low'].iloc[-2]),
+                            'datetime': df.index[-2] if len(df.index) > 1 else current_dt,
+                            'is_bullish': df['close'].iloc[-2] > df['open'].iloc[-2],
+                            'is_bearish': df['close'].iloc[-2] < df['open'].iloc[-2]
+                        }
+                    
+                    self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - State: SCANNING → ARMED_{signal_direction}", 
+                                    "SUCCESS", critical=True)
+                    entry_state = f"ARMED_{signal_direction}"
+            
+            # ---------------------------------------------------------------
+            # PHASE 2: ARMED → WINDOW_OPEN (Pullback Confirmation)
+            # ---------------------------------------------------------------
+            elif entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
+                armed_direction = current_state['armed_direction']
+                
+                # Safety check: If SHORT armed but disabled, reset
+                if armed_direction == 'SHORT' and not short_enabled:
+                    self.terminal_log(f"⚠️ {symbol}: SHORT armed but disabled - Reset", 
+                                    "WARNING", critical=True)
+                    self._reset_entry_state(symbol)
+                    entry_state = 'SCANNING'
+                
+                # ⚠️ CRITICAL: Only check pullbacks on NEW CANDLE, not every tick!
+                # Original strategy checks in next() which is called per closed candle
+                # Track if we've already processed this candle for pullback
+                elif len(df) >= 1 and 'last_pullback_check_candle' in current_state and current_state['last_pullback_check_candle'] == current_candle_time:
+                    # Already processed this candle, skip pullback check until new candle
+                    pass
+                
+                # Check for pullback candles (ONLY on new candles)
+                elif len(df) >= 1:
+                    current_close = df['close'].iloc[-1]
+                    current_open = df['open'].iloc[-1]
+                    current_high = df['high'].iloc[-1]
+                    current_low = df['low'].iloc[-1]
+                    
+                    is_pullback_candle = False
+                    
+                    if armed_direction == 'LONG':
+                        # LONG pullback = bearish candle (close < open)
+                        is_pullback_candle = current_close < current_open
+                    elif armed_direction == 'SHORT':
+                        # SHORT pullback = bullish candle (close > open)
+                        is_pullback_candle = current_close > current_open
+                    
+                    # Mark this candle as processed to avoid re-checking on next tick
+                    current_state['last_pullback_check_candle'] = current_candle_time
+                    
+                    if is_pullback_candle:
+                        # Increment pullback count
+                        current_state['pullback_candle_count'] += 1
+                        
+                        # Get max pullback requirement
+                        max_candles = 2  # Default
+                        if armed_direction == 'LONG':
+                            max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
+                        else:
+                            max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
+                        
+                        # Check if pullback complete
+                        if current_state['pullback_candle_count'] >= max_candles:
+                            # Store last pullback candle data for window calculation
+                            current_state['last_pullback_candle_high'] = float(current_high)
+                            current_state['last_pullback_candle_low'] = float(current_low)
+                            
+                            # Transition to WINDOW_OPEN
+                            self._phase3_open_breakout_window(symbol, armed_direction, config, current_bar)
+                            
+                            # Update BOTH local variable AND state dictionary
+                            current_state['entry_state'] = 'WINDOW_OPEN'
+                            current_state['phase'] = 'WAITING_BREAKOUT'
+                            entry_state = 'WINDOW_OPEN'
+                            
+                            self.terminal_log(f"🟢 {symbol}: Pullback CONFIRMED ({current_state['pullback_candle_count']}/{max_candles}) - Window OPENING", 
+                                            "SUCCESS", critical=True)
+                        else:
+                            # Still waiting for more pullback candles
+                            self.terminal_log(f"📊 {symbol}: Pullback counting ({current_state['pullback_candle_count']}/{max_candles})", 
+                                            "INFO", critical=False)
+                    else:
+                        # Non-pullback candle - GLOBAL INVALIDATION RULE
+                        self.terminal_log(f"⚠️ {symbol}: Non-pullback candle detected - Reset to SCANNING", 
+                                        "WARNING", critical=True)
+                        self._reset_entry_state(symbol)
+                        entry_state = 'SCANNING'
+            
+            # ---------------------------------------------------------------
+            # PHASE 3: WINDOW_OPEN (Monitor for Breakout)
+            # ---------------------------------------------------------------
+            elif entry_state == 'WINDOW_OPEN':
+                armed_direction = current_state['armed_direction']
+                breakout_status = self._phase4_monitor_window(symbol, df, armed_direction, current_bar, current_dt, config)
+                
+                if breakout_status == 'SUCCESS':
+                    self.terminal_log(f"✅ {symbol}: BREAKOUT detected - Entry conditions met!", 
+                                    "SUCCESS", critical=True)
+                    # In real trading, entry would execute here
+                    # For monitor, just reset to allow new cycle
+                    self._reset_entry_state(symbol)
+                    entry_state = 'SCANNING'
+                    
+                elif breakout_status == 'EXPIRED':
+                    self.terminal_log(f"⏱️ {symbol}: Window EXPIRED - Returning to pullback search", 
+                                    "WARNING", critical=True)
+                    # Return to ARMED state to search for more pullback
+                    current_state['entry_state'] = f"ARMED_{armed_direction}"
+                    current_state['phase'] = 'WAITING_PULLBACK'
+                    current_state['window_active'] = False
+                    current_state['pullback_candle_count'] = 0  # Reset pullback count (matches original Line 1404)
+                    entry_state = f"ARMED_{armed_direction}"
+                    
+                elif breakout_status == 'FAILURE':
+                    self.terminal_log(f"❌ {symbol}: Failure boundary broken - Returning to pullback search", 
+                                    "WARNING", critical=True)
+                    # Return to ARMED state
+                    current_state['entry_state'] = f"ARMED_{armed_direction}"
+                    current_state['phase'] = 'WAITING_PULLBACK'
+                    current_state['window_active'] = False
+                    current_state['pullback_candle_count'] = 0  # Reset pullback count (matches original Line 1420)
+                    entry_state = f"ARMED_{armed_direction}"
+            
+            # Update last update time
+            current_state['last_update'] = datetime.now()
+            
+        except Exception as e:
+            self.terminal_log(f"❌ {symbol}: Phase determination error: {str(e)}", "ERROR", critical=True)
+            import traceback
+            traceback.print_exc()
+        
+        return entry_state
+        
+    def update_strategy_displays(self):
+        """Update all strategy-related displays"""
+        self.update_phases_tree()
+        self.update_indicators_display()
+        self.update_window_markers()
+        
+    def update_phases_tree(self):
+        """Update the strategy phases tree"""
+        # Clear existing items
+        for item in self.phases_tree.get_children():
+            self.phases_tree.delete(item)
+            
+        # Add current strategy states
+        for symbol, state in self.strategy_states.items():
+            # Get display-friendly values
+            entry_state = state.get('entry_state', 'SCANNING')
+            phase_display = state.get('phase', 'NORMAL')
+            armed_dir = state.get('armed_direction', None)
+            direction_display = armed_dir if armed_dir else 'None'
+            pullback_count = state.get('pullback_candle_count', 0)
+            window_active = state.get('window_active', False)
+            
+            values = (
+                symbol,
+                phase_display,
+                direction_display,
+                pullback_count,
+                'Yes' if window_active else 'No',
+                state['last_update'].strftime("%H:%M:%S")
+            )
+            
+            item = self.phases_tree.insert("", tk.END, values=values)
+            
+            # Color code based on entry state
+            if entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
+                self.phases_tree.set(item, "Phase", f"🟡 {phase_display}")
+            elif entry_state == 'WINDOW_OPEN':
+                self.phases_tree.set(item, "Phase", f"🟠 {phase_display}")
+            else:  # SCANNING
+                self.phases_tree.set(item, "Phase", f"⚪ {phase_display}")
+                
+    def update_indicators_display(self):
+        """Update the indicators display for selected symbol"""
+        symbol = self.symbol_var.get()
+        if not symbol or symbol not in self.strategy_states:
+            return
+            
+        indicators = self.strategy_states[symbol].get('indicators', {})
+        config = self.strategy_configs.get(symbol, {})
+        
+        if not indicators:
+            return
+            
+        # Format comprehensive indicators display
+        display_text = f"=== {symbol} Technical Indicators & Configuration ===\n\n"
+        
+        try:
+            display_text += f"📈 CURRENT MARKET DATA\n"
+            
+            # Safe formatting for price
+            current_price = indicators.get('current_price', 'N/A')
+            if isinstance(current_price, (int, float)):
+                display_text += f"Current Price: {current_price:.5f}\n"
+            else:
+                display_text += f"Current Price: {current_price}\n"
+            display_text += f"Trend Direction: {indicators.get('trend', 'N/A')}\n\n"
+            
+            display_text += f"📊 EMA INDICATORS (Asset-Specific - ALL 5 EMAs)\n"
+            
+            # Safe formatting for ALL EMAs (including Confirm EMA)
+            # 1. Confirm EMA (CRITICAL for crossover detection)
+            ema_confirm = indicators.get('ema_confirm', 'N/A')
+            if isinstance(ema_confirm, (int, float)):
+                display_text += f"Confirm EMA (1):     {ema_confirm:.5f}  ← Crossover Signal\n"
+            else:
+                display_text += f"Confirm EMA (1):     {ema_confirm}  ← Crossover Signal\n"
+            
+            # 2. Fast EMA
+            ema_fast = indicators.get('ema_fast', 'N/A')
+            if isinstance(ema_fast, (int, float)):
+                display_text += f"Fast EMA ({indicators.get('ema_fast_period', '?')}):       {ema_fast:.5f}\n"
+            else:
+                display_text += f"Fast EMA ({indicators.get('ema_fast_period', '?')}):       {ema_fast}\n"
+            
+            # 3. Medium EMA
+            ema_medium = indicators.get('ema_medium', 'N/A')
+            if isinstance(ema_medium, (int, float)):
+                display_text += f"Medium EMA ({indicators.get('ema_medium_period', '?')}):     {ema_medium:.5f}\n"
+            else:
+                display_text += f"Medium EMA ({indicators.get('ema_medium_period', '?')}):     {ema_medium}\n"
+            
+            # 4. Slow EMA
+            ema_slow = indicators.get('ema_slow', 'N/A')
+            if isinstance(ema_slow, (int, float)):
+                display_text += f"Slow EMA ({indicators.get('ema_slow_period', '?')}):       {ema_slow:.5f}\n"
+            else:
+                display_text += f"Slow EMA ({indicators.get('ema_slow_period', '?')}):       {ema_slow}\n"
+            
+            # 5. Filter EMA (trend filter)
+            ema_filter = indicators.get('ema_filter', 'N/A')
+            if isinstance(ema_filter, (int, float)):
+                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter:.5f}  ← Trend Filter\n\n"
+            else:
+                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter}  ← Trend Filter\n\n"
+            
+            display_text += f"⚡ ATR & RISK MANAGEMENT\n"
+            
+            # Safe formatting for ATR and levels
+            atr = indicators.get('atr', 'N/A')
+            if isinstance(atr, (int, float)):
+                display_text += f"ATR ({indicators.get('atr_period', '?')}): {atr:.6f}\n"
+            else:
+                display_text += f"ATR ({indicators.get('atr_period', '?')}): {atr}\n"
+                
+            sl_level = indicators.get('sl_level', 'N/A')
+            if isinstance(sl_level, (int, float)):
+                display_text += f"Stop Loss Level: {sl_level:.5f} (ATR × {indicators.get('sl_multiplier', '?')})\n"
+            else:
+                display_text += f"Stop Loss Level: {sl_level} (ATR × {indicators.get('sl_multiplier', '?')})\n"
+                
+            tp_level = indicators.get('tp_level', 'N/A')
+            if isinstance(tp_level, (int, float)):
+                display_text += f"Take Profit Level: {tp_level:.5f} (ATR × {indicators.get('tp_multiplier', '?')})\n"
+            else:
+                display_text += f"Take Profit Level: {tp_level} (ATR × {indicators.get('tp_multiplier', '?')})\n"
+                
+            # Safe risk:reward calculation
+            risk_reward = 0
+            sl_mult = indicators.get('sl_multiplier')
+            tp_mult = indicators.get('tp_multiplier')
+            if sl_mult and tp_mult and isinstance(sl_mult, (int, float)) and isinstance(tp_mult, (int, float)) and sl_mult != 0:
+                risk_reward = tp_mult / sl_mult
+                display_text += f"Risk:Reward Ratio: 1:{risk_reward:.2f}\n\n"
+            else:
+                display_text += f"Risk:Reward Ratio: Not available\n\n"
+            
+            display_text += f"🕐 ENTRY SCHEDULE\n"
+            use_time_filter = config.get('Use Time Range Filter', 'False')
+            if 'True' in str(use_time_filter):
+                start_hour = config.get('Entry Start Hour (UTC)', 'N/A')
+                start_min = config.get('Entry Start Minute', '0')
+                end_hour = config.get('Entry End Hour (UTC)', 'N/A')
+                end_min = config.get('Entry End Minute', '0')
+                display_text += f"Time Filter: ENABLED\n"
+                display_text += f"Entry Window: {start_hour}:{start_min} - {end_hour}:{end_min} UTC\n"
+            else:
+                display_text += f"Time Filter: DISABLED (24/7 trading)\n"
+            display_text += "\n"
+            
+            display_text += f"🎯 PULLBACK ENTRY SYSTEM\n"
+            use_pullback = config.get('Use Pullback Entry System', 'False')
+            if 'True' in str(use_pullback):
+                max_candles = config.get('Max Pullback Candles', 'N/A')
+                window_periods = config.get('Entry Window Periods', 'N/A')
+                window_offset = config.get('Window Offset Multiplier', 'N/A')
+                display_text += f"Pullback System: ENABLED\n"
+                display_text += f"Max Pullback Candles: {max_candles}\n"
+                display_text += f"Entry Window Periods: {window_periods}\n"
+                display_text += f"Window Offset Multiplier: {window_offset}\n"
+            else:
+                display_text += f"Pullback System: DISABLED (Direct entries)\n"
+            display_text += "\n"
+            
+            display_text += f"🔍 ENTRY FILTERS\n"
+            # ATR Filter
+            use_atr_filter = config.get('Use ATR Volatility Filter', 'False')
+            if 'True' in str(use_atr_filter):
+                min_atr = config.get('ATR Min Threshold', 'N/A')
+                max_atr = config.get('ATR Max Threshold', 'N/A')
+                display_text += f"ATR Filter: ENABLED ({min_atr} - {max_atr})\n"
+            else:
+                display_text += f"ATR Filter: DISABLED\n"
+                
+            # Angle Filter
+            use_angle_filter = config.get('Use EMA Angle Filter', 'False')
+            if 'True' in str(use_angle_filter):
+                min_angle = config.get('Min EMA Angle (degrees)', 'N/A')
+                max_angle = config.get('Max EMA Angle (degrees)', 'N/A')
+                display_text += f"EMA Angle Filter: ENABLED ({min_angle}° - {max_angle}°)\n"
+            else:
+                display_text += f"EMA Angle Filter: DISABLED\n"
+                
+            # Price Filter
+            use_price_filter = config.get('Use Price Filter EMA', 'False')
+            display_text += f"Price Filter EMA: {'ENABLED' if 'True' in str(use_price_filter) else 'DISABLED'}\n"
+            
+            display_text += "\n"
+            
+            # Strategy state info
+            state = self.strategy_states[symbol]
+            display_text += f"📊 CURRENT STRATEGY STATE\n"
+            display_text += f"Phase: {state['phase']}\n"
+            display_text += f"Armed Direction: {state.get('armed_direction', 'None')}\n"
+            display_text += f"Pullback Count: {state.get('pullback_count', 0)}\n"
+            display_text += f"Window Active: {state.get('window_active', False)}\n"
+            display_text += f"Last Update: {state['last_update'].strftime('%H:%M:%S')}\n"
+            
+        except Exception as e:
+            display_text += f"Error displaying indicators: {str(e)}\n"
+            
+        # Update display
+        self.indicators_text.delete(1.0, tk.END)
+        self.indicators_text.insert(1.0, display_text)
+        
+    def update_window_markers(self):
+        """Update the window markers display"""
+        # Clear existing items
+        for item in self.markers_tree.get_children():
+            self.markers_tree.delete(item)
+            
+        # Add window markers for strategies in WINDOW_OPEN state
+        for symbol, state in self.strategy_states.items():
+            entry_state = state.get('entry_state', 'SCANNING')
+            
+            if entry_state == 'WINDOW_OPEN' and state.get('window_active', False):
+                armed_direction = state.get('armed_direction', 'Unknown')
+                window_start = state.get('window_bar_start', 'None')
+                window_end = state.get('window_expiry_bar', 'None')
+                
+                # Show breakout levels (top/bottom limits)
+                window_top = state.get('window_top_limit')
+                window_bottom = state.get('window_bottom_limit')
+                
+                if armed_direction == 'LONG':
+                    # LONG breakout = price breaks above top limit
+                    breakout_str = f"{window_top:.5f}" if window_top else "None"
+                else:
+                    # SHORT breakout = price breaks below bottom limit
+                    breakout_str = f"{window_bottom:.5f}" if window_bottom else "None"
+                    
+                values = (
+                    symbol,
+                    armed_direction,
+                    str(window_start) if window_start else 'None',
+                    str(window_end) if window_end else 'None',
+                    breakout_str,
+                    "ACTIVE"
+                )
+                
+                self.markers_tree.insert("", tk.END, values=values)
+                
+    def refresh_chart(self):
+        """Refresh the current chart with candlesticks"""
+        if not MATPLOTLIB_AVAILABLE:
+            return
+            
+        symbol = self.chart_symbol_var.get()
+        if symbol not in self.chart_data:
+            self.terminal_log(f"⚠️ No chart data available for {symbol}", "ERROR")
+            return
+            
+        try:
+            chart_info = self.chart_data[symbol]
+            df = chart_info['df']
+            indicators = chart_info['indicators']
+            
+            # Clear previous plot
+            self.ax.clear()
+            
+            # Convert time to local timezone (fix +1 hour issue)
+            df_local = df.copy()
+            df_local['time'] = pd.to_datetime(df['time'])
+            # Adjust for timezone offset (subtract 1 hour to correct the display)
+            df_local['time'] = df_local['time'] - timedelta(hours=1)
+            
+            # Create candlestick chart
+            self.plot_candlesticks(self.ax, df_local)
+            
+            # Plot EMAs with actual periods from config
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Get actual EMA periods from strategy configuration
+            fast_period = self.extract_numeric_value(config.get('ema_fast_length', config.get('Fast EMA Period', '18')))
+            medium_period = self.extract_numeric_value(config.get('ema_medium_length', config.get('Medium EMA Period', '18')))
+            slow_period = self.extract_numeric_value(config.get('ema_slow_length', config.get('Slow EMA Period', '24')))
+            confirm_period = self.extract_numeric_value(config.get('ema_confirm_length', config.get('Confirmation EMA Period', '1')))
+            filter_period = self.extract_numeric_value(config.get('ema_filter_price_length', config.get('Price Filter EMA Period', '100')))
+            
+            # Plot ALL EMAs with asset-specific periods
+            # 1. Confirm EMA (most important for crossovers)
+            if len(df_local) >= confirm_period:
+                ema_confirm = df_local['close'].ewm(span=confirm_period).mean()
+                self.ax.plot(df_local['time'], ema_confirm, label=f'EMA Confirm ({int(confirm_period)})', 
+                           color='cyan', alpha=0.9, linewidth=2, linestyle='-')
+            
+            # 2. Fast EMA
+            if len(df_local) >= fast_period:
+                ema_fast = df_local['close'].ewm(span=fast_period).mean()
+                self.ax.plot(df_local['time'], ema_fast, label=f'EMA Fast ({int(fast_period)})', 
+                           color='red', alpha=0.8, linewidth=1.5)
+            
+            # 3. Medium EMA
+            if len(df_local) >= medium_period:
+                ema_medium = df_local['close'].ewm(span=medium_period).mean()
+                self.ax.plot(df_local['time'], ema_medium, label=f'EMA Medium ({int(medium_period)})', 
+                           color='orange', alpha=0.8, linewidth=1.5)
+            
+            # 4. Slow EMA
+            if len(df_local) >= slow_period:
+                ema_slow = df_local['close'].ewm(span=slow_period).mean()
+                self.ax.plot(df_local['time'], ema_slow, label=f'EMA Slow ({int(slow_period)})', 
+                           color='green', alpha=0.8, linewidth=1.5)
+            
+            # 5. Filter EMA (trend filter) - ALWAYS plot, EWM handles insufficient data
+            # Reduced minimum requirement to show Filter EMA even with less data
+            if len(df_local) >= min(20, filter_period):  # Minimum 20 bars or filter_period
+                ema_filter = df_local['close'].ewm(span=filter_period, min_periods=1).mean()
+                self.ax.plot(df_local['time'], ema_filter, label=f'EMA Filter ({int(filter_period)})', 
+                           color='purple', alpha=0.7, linewidth=1.5, linestyle='-')
+                # Debug: print to confirm Filter EMA is plotted
+                if self.p.print_signals if hasattr(self, 'p') else False:
+                    print(f"DEBUG: Filter EMA ({int(filter_period)}) plotted for {symbol} with {len(df_local)} bars")
+            
+            # Mark current phase
+            state = self.strategy_states[symbol]
+            phase_colors = {
+                'NORMAL': 'lightgray',
+                'WAITING_PULLBACK': 'yellow',
+                'WAITING_BREAKOUT': 'orange'
+            }
+            phase_color = phase_colors.get(state['phase'], 'lightgray')
+            
+            # Add phase indicator as background
+            current_price = indicators.get('current_price', df_local['close'].iloc[-1])
+            self.ax.axhspan(current_price * 0.9999, current_price * 1.0001, 
+                          color=phase_color, alpha=0.3, 
+                          label=f'Phase: {state["phase"]}')
+            
+            # Mark pullback phase with special indicators
+            if state['phase'] == 'WAITING_PULLBACK':
+                pullback_count = state.get('pullback_count', 0)
+                self.ax.text(0.02, 0.98, f'Pullback Count: {pullback_count}', 
+                           transform=self.ax.transAxes, fontsize=10, 
+                           bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7),
+                           verticalalignment='top')
+                           
+            elif state['phase'] == 'WAITING_BREAKOUT':
+                breakout_level = state.get('breakout_level', current_price)
+                if breakout_level:
+                    self.ax.axhline(y=breakout_level, color='red', linestyle='--', 
+                                  alpha=0.8, label=f'Breakout Level: {breakout_level:.5f}')
+            
+            # NEW: Add ATR SL/TP levels visualization
+            atr = indicators.get('atr')
+            if atr and atr != 'N/A' and isinstance(atr, (int, float)) and atr > 0:
+                # Get asset-specific ATR multipliers from config
+                sl_multiplier_long = self.extract_float_value(config.get('long_atr_sl_multiplier', 
+                                                              config.get('LONG ATR SL Multiplier', '3.0')))
+                tp_multiplier_long = self.extract_float_value(config.get('long_atr_tp_multiplier', 
+                                                              config.get('LONG ATR TP Multiplier', '10.0')))
+                sl_multiplier_short = self.extract_float_value(config.get('short_atr_sl_multiplier', 
+                                                               config.get('SHORT ATR SL Multiplier', '3.0')))
+                tp_multiplier_short = self.extract_float_value(config.get('short_atr_tp_multiplier', 
+                                                               config.get('SHORT ATR TP Multiplier', '8.0')))
+                
+                # Calculate LONG levels (using last low/high from df)
+                last_low = df_local['low'].iloc[-1]
+                last_high = df_local['high'].iloc[-1]
+                
+                sl_level_long = last_low - (atr * sl_multiplier_long)
+                tp_level_long = last_high + (atr * tp_multiplier_long)
+                
+                # Calculate SHORT levels
+                sl_level_short = last_high + (atr * sl_multiplier_short)
+                tp_level_short = last_low - (atr * tp_multiplier_short)
+                
+                # Plot LONG levels (green zone)
+                self.ax.axhline(y=sl_level_long, color='green', linestyle=':', 
+                              alpha=0.5, linewidth=1.5, label=f'LONG SL: {sl_level_long:.5f}')
+                self.ax.axhline(y=tp_level_long, color='lime', linestyle=':', 
+                              alpha=0.5, linewidth=1.5, label=f'LONG TP: {tp_level_long:.5f}')
+                
+                # Check if SHORT trades are enabled before showing SHORT levels
+                config = self.strategy_configs.get(symbol, {})
+                short_enabled = config.get('ENABLE_SHORT_TRADES', 'False')
+                if isinstance(short_enabled, str):
+                    short_enabled = short_enabled.lower() in ('true', '1', 'yes')
+                
+                # Only plot SHORT levels if SHORT trades are enabled
+                if short_enabled:
+                    self.ax.axhline(y=sl_level_short, color='red', linestyle=':', 
+                                  alpha=0.5, linewidth=1.5, label=f'SHORT SL: {sl_level_short:.5f}')
+                    self.ax.axhline(y=tp_level_short, color='darkred', linestyle=':', 
+                                  alpha=0.5, linewidth=1.5, label=f'SHORT TP: {tp_level_short:.5f}')
+                
+                # Add ATR indicator box on chart
+                if short_enabled:
+                    atr_text = (f'ATR: {atr:.6f}\n'
+                               f'LONG: SL={sl_multiplier_long:.1f}x TP={tp_multiplier_long:.1f}x\n'
+                               f'SHORT: SL={sl_multiplier_short:.1f}x TP={tp_multiplier_short:.1f}x')
+                else:
+                    atr_text = (f'ATR: {atr:.6f}\n'
+                               f'LONG: SL={sl_multiplier_long:.1f}x TP={tp_multiplier_long:.1f}x')
+                
+                self.ax.text(0.98, 0.02, atr_text, 
+                           transform=self.ax.transAxes, fontsize=8,
+                           bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.7),
+                           verticalalignment='bottom', horizontalalignment='right')
+            
+            # Formatting
+            self.ax.set_title(f'{symbol} - Live Candlestick Chart with ATR SL/TP (Phase: {state["phase"]})')
+            self.ax.set_xlabel('Time (Local)')
+            self.ax.set_ylabel('Price')
+            self.ax.legend(loc='upper left', fontsize=7, ncol=2)
+            self.ax.grid(True, alpha=0.3)
+            
+            # Format time axis
+            self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            self.ax.tick_params(axis='x', rotation=45, labelsize=8)
+            
+            # Set reasonable y-axis limits
+            price_range = df_local['high'].max() - df_local['low'].min()
+            y_margin = price_range * 0.02  # 2% margin
+            self.ax.set_ylim(df_local['low'].min() - y_margin, df_local['high'].max() + y_margin)
+            
+            self.fig.tight_layout()
+            self.canvas.draw()
+            
+            self.terminal_log(f"📊 Candlestick chart refreshed for {symbol} (Phase: {state['phase']})", "NORMAL")
+            
+        except Exception as e:
+            self.terminal_log(f"❌ Chart refresh error: {str(e)}", "ERROR")
+            
+    def plot_candlesticks(self, ax, df):
+        """Plot candlestick chart"""
+        try:
+            from matplotlib.patches import Rectangle
+            
+            for i, (idx, row) in enumerate(df.iterrows()):
+                open_price = row['open']
+                high_price = row['high'] 
+                low_price = row['low']
+                close_price = row['close']
+                time_point = row['time']
+                
+                # Determine candle color
+                color = 'green' if close_price >= open_price else 'red'
+                edge_color = 'darkgreen' if close_price >= open_price else 'darkred'
+                
+                # Draw high-low line
+                ax.plot([time_point, time_point], [low_price, high_price], 
+                       color=edge_color, linewidth=0.8)
+                
+                # Draw candle body
+                body_height = abs(close_price - open_price)
+                body_bottom = min(open_price, close_price)
+                
+                # Calculate candle width (time-based)
+                if len(df) > 1:
+                    time_diff = (df['time'].iloc[1] - df['time'].iloc[0]).total_seconds() / 3600  # hours
+                    candle_width = timedelta(hours=time_diff * 0.8)  # 80% of time interval
+                else:
+                    candle_width = timedelta(minutes=4)  # 4 minutes for 5-minute bars
+                
+                # Create rectangle for candle body
+                rect = Rectangle((time_point - candle_width/2, body_bottom), 
+                               candle_width, body_height,
+                               facecolor=color, edgecolor=edge_color, 
+                               alpha=0.8, linewidth=0.5)
+                ax.add_patch(rect)
+                
+        except Exception as e:
+            # Fallback to line plot if candlestick fails
+            ax.plot(df['time'], df['close'], label='Price', color='blue', linewidth=1)
+            
+    def process_phase_updates(self):
+        """Process phase updates from the monitoring thread"""
+        try:
+            while not self.phase_update_queue.empty():
+                update = self.phase_update_queue.get_nowait()
+                # Process update
+                
+        except queue.Empty:
+            pass
+        except Exception as e:
+            self.terminal_log(f"❌ Phase update error: {str(e)}", "ERROR")
+            
+    def process_phase_updates(self):
+        """Process phase updates from the monitoring thread"""
+        try:
+            while not self.phase_update_queue.empty():
+                update = self.phase_update_queue.get_nowait()
+                # Process update
+                
+        except queue.Empty:
+            pass
+        except Exception as e:
+            self.terminal_log(f"❌ Phase update error: {str(e)}", "ERROR")
+            
+        # Schedule next update
+        self.root.after(1000, self.process_phase_updates)
+        
+    def log_phase_summary(self):
+        """Log current phase status for all assets"""
+        try:
+            summary_lines = []
+            summary_lines.append("=" * 60)
+            summary_lines.append("📊 STRATEGY PHASE SUMMARY - ALL ASSETS")
+            summary_lines.append("=" * 60)
+            
+            # Group by phase for better overview
+            phases = {'NORMAL': [], 'WAITING_PULLBACK': [], 'WAITING_BREAKOUT': []}
+            
+            for symbol, state in self.strategy_states.items():
+                phase = state['phase']
+                price = state.get('indicators', {}).get('current_price', 0)
+                trend = state.get('indicators', {}).get('trend', 'N/A')
+                
+                if phase in phases:
+                    phases[phase].append({
+                        'symbol': symbol,
+                        'price': price,
+                        'trend': trend,
+                        'pullback_count': state.get('pullback_count', 0),
+                        'window_active': state.get('window_active', False),
+                        'last_update': state.get('last_update', datetime.now())
+                    })
+            
+            # Display each phase group
+            for phase_name, assets in phases.items():
+                if assets:
+                    phase_emoji = {
+                        'NORMAL': '⚪',
+                        'WAITING_PULLBACK': '🟡', 
+                        'WAITING_BREAKOUT': '🟠'
+                    }.get(phase_name, '⚫')
+                    
+                    summary_lines.append(f"{phase_emoji} {phase_name} ({len(assets)} assets):")
+                    
+                    for asset in assets:
+                        line = f"   {asset['symbol']}: {asset['price']:.5f} | {asset['trend']}"
+                        if phase_name == 'WAITING_PULLBACK':
+                            line += f" | Scanning pullback"
+                        elif phase_name == 'WAITING_BREAKOUT':
+                            line += f" | Pullback: {asset['pullback_count']} | Window: {'OPEN' if asset['window_active'] else 'CLOSED'}"
+                        summary_lines.append(line)
+                    summary_lines.append("")
+            
+            # Add timestamp
+            summary_lines.append(f"⏰ Updated: {datetime.now().strftime('%H:%M:%S')}")
+            summary_lines.append("=" * 60)
+            
+            # Log each line
+            for line in summary_lines:
+                self.terminal_log(line, "NORMAL")
+                
+        except Exception as e:
+            self.terminal_log(f"❌ Phase summary error: {str(e)}", "ERROR")
+        
+    def terminal_log(self, message, level="NORMAL", critical=False):
+        """Add message to terminal display - only critical events by default"""
+        
+        # Define critical keywords that should always be displayed
+        critical_keywords = [
+            "CROSSOVER", "CROSS ABOVE", "CROSS BELOW", "CROSSED",  # EMA crossovers
+            "PHASE CHANGE", "WAITING_PULLBACK", "WAITING_BREAKOUT",  # Phase changes
+            "ENTRY", "EXIT", "BREAKOUT DETECTED", "SIGNAL",  # Trading signals
+            "ERROR", "⚠️", "❌", "🎯", "🟢", "🔴", "🔄"  # Errors and alerts
+        ]
+        
+        # Check if message contains critical keywords
+        is_critical = critical or any(keyword in message.upper() for keyword in critical_keywords)
+        
+        # Only log critical messages or explicit critical flag
+        if not is_critical:
+            # Still log to file for debugging but don't show in terminal
+            if level == "ERROR":
+                self.logger.error(message)
+            elif level == "SUCCESS":
+                self.logger.info(f"SUCCESS: {message}")
+            else:
+                self.logger.info(message)
+            return
+        
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        log_entry = f"[{timestamp}] {message}\n"
+        
+        # Add to terminal display
+        self.terminal_text.insert(tk.END, log_entry, level)
+        
+        # Scroll to bottom
+        self.terminal_text.see(tk.END)
+        
+        # Limit terminal size (keep last 1000 lines)
+        lines = self.terminal_text.get(1.0, tk.END).split('\n')
+        if len(lines) > 1000:
+            self.terminal_text.delete(1.0, f"{len(lines)-1000}.0")
+            
+        # Log to file
+        if level == "ERROR":
+            self.logger.error(message)
+        elif level == "SUCCESS":
+            self.logger.info(f"SUCCESS: {message}")
+        else:
+            self.logger.info(message)
+            
+    def clear_terminal(self):
+        """Clear terminal display"""
+        self.terminal_text.delete(1.0, tk.END)
+        self.terminal_log("Terminal cleared", "NORMAL")
+        
+    def save_terminal_log(self):
+        """Save terminal log to file"""
+        filename = f"terminal_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        try:
+            logs = self.terminal_text.get(1.0, tk.END)
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(logs)
+                
+            messagebox.showinfo("Save Complete", f"Terminal log saved to {filename}")
+            self.terminal_log(f"✅ Terminal log saved to {filename}", "SUCCESS")
+            
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save: {str(e)}")
+            self.terminal_log(f"❌ Save error: {str(e)}", "ERROR")
+            
+    # Event handlers
+    def on_strategy_phase_select(self, event):
+        """Handle strategy phase selection"""
+        selection = self.phases_tree.selection()
+        if not selection:
+            return
+            
+        item = self.phases_tree.item(selection[0])
+        symbol = item['values'][0]
+        
+        # Update symbol selector
+        self.symbol_var.set(symbol)
+        self.on_symbol_config_select(None)
+        
+        # Update chart symbol
+        self.chart_symbol_var.set(symbol)
+        if MATPLOTLIB_AVAILABLE:
+            self.refresh_chart()
+            
+    def on_symbol_config_select(self, event):
+        """Handle symbol configuration selection"""
+        symbol = self.symbol_var.get()
+        if not symbol or symbol not in self.strategy_configs:
+            return
+            
+        config = self.strategy_configs[symbol]
+        
+        # Format configuration display
+        config_text = f"=== {symbol} Strategy Configuration ===\n\n"
+        
+        if "error" in config:
+            config_text += f"Error: {config['error']}\n"
+        else:
+            for param, value in config.items():
+                config_text += f"{param}: {value}\n"
+                
+        # Update configuration display
+        self.config_text.delete(1.0, tk.END)
+        self.config_text.insert(1.0, config_text)
+        
+        # Update indicators display
+        self.update_indicators_display()
+        
+    def on_chart_symbol_change(self, event):
+        """Handle chart symbol change"""
+        if MATPLOTLIB_AVAILABLE:
+            self.refresh_chart()
+            
+    def toggle_connection(self):
+        """Toggle MT5 connection"""
+        if self.mt5_connected:
+            self.disconnect_mt5()
+        else:
+            self.initialize_mt5_connection()
+            
+    def disconnect_mt5(self):
+        """Disconnect from MT5"""
+        if mt5:
+            mt5.shutdown()
+        self.mt5_connected = False
+        self.connection_status_label.config(text="Disconnected", foreground="red")
+        self.connect_button.config(text="Connect")
+        
+        self.terminal_log("🔌 Disconnected from MT5", "NORMAL")
+        
+    def on_closing(self):
+        """Handle application closing"""
+        try:
+            if self.monitoring_active:
+                self.stop_monitoring()
+                
+            if self.mt5_connected:
+                self.disconnect_mt5()
+                
+            self.terminal_log("🔥 Application closing...", "NORMAL")
+            
+        except Exception as e:
+            self.logger.error(f"Error during shutdown: {str(e)}")
+        finally:
+            self.root.quit()
+            self.root.destroy()
+
+def main():
+    """Main application entry point"""
+    print("🚀 Starting Advanced MT5 Trading Monitor...")
+    print("=" * 60)
+    
+    # Check dependencies
+    if not DEPENDENCIES_AVAILABLE:
+        print("❌ ERROR: Required dependencies not found!")
+        print("Please install: pip install MetaTrader5 pandas numpy")
+        return
+        
+    if not MATPLOTLIB_AVAILABLE:
+        print("⚠️  WARNING: Chart libraries not found!")
+        print("For live charts, install: pip install matplotlib mplfinance")
+        print("Continuing without charts...")
+        print()
+        
+    try:
+        # Create and run GUI
+        root = tk.Tk()
+        app = AdvancedMT5TradingMonitorGUI(root)
+        
+        print("✅ Advanced GUI initialized successfully")
+        print("📊 Starting strategy phase monitoring...")
+        print("=" * 60)
+        
+        root.mainloop()
+        
+    except Exception as e:
+        print(f"❌ Error starting GUI: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == "__main__":
+    main()

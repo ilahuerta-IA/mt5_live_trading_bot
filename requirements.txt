@@ -1,0 +1,29 @@
+# MetaTrader 5 Advanced Trading Monitor - Requirements
+# Install with: pip install -r requirements.txt
+
+# === CORE MT5 INTEGRATION ===
+MetaTrader5>=5.0.45           # MetaTrader 5 Python API
+
+# === DATA PROCESSING ===
+pandas>=1.5.0                 # Data manipulation and analysis
+numpy>=1.24.0                 # Numerical computing
+
+# === CHARTING & VISUALIZATION ===
+matplotlib>=3.5.0             # Plotting library
+mplfinance>=0.12.0            # Financial charts and candlesticks
+
+# === GUI FRAMEWORK ===
+# tkinter (built-in with Python - no installation needed)
+
+# === UTILITIES ===
+python-dateutil>=2.8.0       # Date/time utilities
+pytz>=2022.1                  # Timezone handling
+
+# === OPTIONAL ENHANCEMENTS ===
+requests>=2.28.0              # HTTP requests (for future API features)
+psutil>=5.9.0                 # System monitoring (for performance tracking)
+
+# === DEVELOPMENT & TESTING ===
+# pytest>=7.0.0               # Testing framework (uncomment if needed)
+# black>=22.0.0                # Code formatting (uncomment if needed)
+# flake8>=5.0.0                # Code linting (uncomment if needed)

@@ -1,0 +1,204 @@
+# ===================================================
+# MT5 Live Trading Bot - Git Ignore File
+# ===================================================
+# Protects sensitive trading data and credentials from being committed to git
+
+# ===================
+# SENSITIVE DATA - NEVER COMMIT THESE!
+# ===================
+
+# MT5 Credentials (CRITICAL - Contains real trading account info)
+config/mt5_credentials.json
+mt5_credentials.json
+**/mt5_credentials.json
+
+# Trading logs (May contain sensitive account/position data)
+logs/
+*.log
+trading_*.log
+mt5_*.log
+
+# Account statements and reports
+*.statement
+*.report
+account_*.json
+trading_report_*.txt
+temp_reports/
+
+# Configuration backups that might contain credentials
+config/*.backup
+config/*.bak
+*.credentials
+
+# ===================
+# PYTHON ENVIRONMENT
+# ===================
+
+# Virtual environments
+venv/
+env/
+.env
+.venv
+ENV/
+env.bak/
+venv.bak/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ===================
+# IDE AND EDITORS
+# ===================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+# Uncomment the next line if you want to keep VS Code settings
+# !.vscode/settings.json
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Spyder
+.spyderproject
+.spyproject
+
+# ===================
+# OPERATING SYSTEM
+# ===================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ===================
+# TEMPORARY FILES
+# ===================
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~.nib
+local.properties
+
+# Backup files
+*.backup
+*.bak
+*.orig
+
+# ===================
+# MT5 SPECIFIC
+# ===================
+
+# MT5 terminal files (if any get copied accidentally)
+*.ex5
+*.mq5
+terminal.exe
+mt5setup.exe
+
+# Strategy compilation artifacts
+strategies/*.ex5
+strategies/*.mq5
+
+# MT5 data and cache
+Bases/
+config/
+History/
+logs/
+MQL5/
+Profiles/
+Sounds/
+templates/
+
+# ===================
+# PROJECT SPECIFIC
+# ===================
+
+# Large data files that shouldn't be in git
+*.csv
+data/
+market_data/
+historical_data/
+
+# Local configuration overrides
+local_config.json
+user_settings.json
+
+# Performance analysis outputs
+analysis_*.html
+backtest_results/
+optimization_results/
+
+# ===================
+# SECURITY NOTES
+# ===================
+
+# This .gitignore protects:
+# 1. MT5 credentials and account information
+# 2. Trading logs with position/account details  
+# 3. Temporary reports and statements
+# 4. Local configuration overrides
+# 5. Development environment artifacts
+
+# REMEMBER: 
+# - Never commit real trading credentials
+# - Use template files for sharing configuration structure
+# - Keep sensitive data in local files only
+# - Review commits carefully before pushing
