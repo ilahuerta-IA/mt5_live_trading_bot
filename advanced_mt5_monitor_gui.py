@@ -169,7 +169,7 @@ class AdvancedMT5TradingMonitorGUI:
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
                 stream_handler,
-                logging.FileHandler('mt5_advanced_monitor.log')
+                logging.FileHandler('mt5_advanced_monitor.log', encoding='utf-8')
             ]
         )
         self.logger = logging.getLogger(__name__)
@@ -699,25 +699,52 @@ class AdvancedMT5TradingMonitorGUI:
         self.terminal_log("⏹️ Monitoring stopped", "NORMAL")
         
     def advanced_monitoring_loop(self):
-        """Advanced monitoring loop with strategy phase tracking"""
+        """Advanced monitoring loop with strategy phase tracking
+        
+        Optimized to check ONLY on candle close (every 5 minutes) for M5 timeframe
+        instead of wasteful 2-second polling.
+        """
         last_summary = time.time()
+        last_candle_check = {}  # Track last candle time per symbol
         
         while self.monitoring_active and not self.stop_event.is_set():
             try:
-                # Monitor each strategy's phase
-                for symbol in self.strategy_states.keys():
-                    self.monitor_strategy_phase(symbol)
+                current_minute = datetime.now().minute
+                current_second = datetime.now().second
                 
-                # Update displays
-                self.root.after(0, self.update_strategy_displays)
+                # ✅ SMART CANDLE DETECTION: Only check at candle close
+                # M5 candles close when minute % 5 == 0 (0, 5, 10, 15, 20, etc.)
+                # Check in the first 10 seconds after close to catch the new candle
+                is_candle_close_time = (current_minute % 5 == 0) and (current_second <= 10)
                 
-                # Log phase summary every 30 seconds
-                if time.time() - last_summary >= 30:
+                if is_candle_close_time:
+                    # Create check key for this minute
+                    check_key = f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    
+                    # Log candle close detection (once per 5 minutes)
+                    if last_candle_check.get('last_candle_log') != check_key:
+                        self.terminal_log(f"⏱️ CANDLE CLOSE DETECTED - Checking all symbols at {datetime.now().strftime('%H:%M:%S')}", 
+                                        "INFO", critical=True)
+                        last_candle_check['last_candle_log'] = check_key
+                    
+                    # Monitor each strategy's phase on candle close
+                    for symbol in self.strategy_states.keys():
+                        # Check if we haven't processed this minute yet
+                        if last_candle_check.get(symbol) != check_key:
+                            self.monitor_strategy_phase(symbol)
+                            last_candle_check[symbol] = check_key
+                    
+                    # Update displays after checking all symbols
+                    self.root.after(0, self.update_strategy_displays)
+                
+                # Log phase summary every 60 seconds
+                if time.time() - last_summary >= 60:
                     self.log_phase_summary()
                     last_summary = time.time()
                 
-                # Wait before next iteration
-                time.sleep(2)  # Update every 2 seconds
+                # ✅ OPTIMIZED: Sleep 5 seconds (instead of 2)
+                # We only need to check near candle close times
+                time.sleep(5)
                 
             except Exception as e:
                 self.terminal_log(f"❌ Monitoring error: {str(e)}", "ERROR")
@@ -734,7 +761,12 @@ class AdvancedMT5TradingMonitorGUI:
             # Using 501 bars ensures all EMAs (18, 24, 70) are fully stabilized
             # Fetch extra bar because position 0 is forming/incomplete candle
             rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 501)  # type: ignore
-            if rates is None or len(rates) < 200:
+            if rates is None:
+                error = mt5.last_error()  # type: ignore
+                self.terminal_log(f"⚠️ No chart data available for {symbol} - MT5 Error: {error}", "ERROR", critical=True)
+                return
+            if len(rates) < 200:
+                self.terminal_log(f"⚠️ Insufficient data for {symbol} - Got {len(rates)} bars, need 200+", "ERROR", critical=True)
                 return
                 
             # Convert to DataFrame
@@ -1332,6 +1364,18 @@ class AdvancedMT5TradingMonitorGUI:
             return entry_state  # Return current state unchanged
         
         try:
+            # ✅ DIAGNOSTIC: Log state machine processing
+            if entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
+                pullback_count = current_state.get('pullback_candle_count', 0)
+                self.terminal_log(f"🔧 STATE: {symbol} processing | state={entry_state} | pullback_count={pullback_count} | df_len={len(df)}", 
+                                "DEBUG", critical=True)
+            elif entry_state == 'WINDOW_OPEN':
+                # ⚠️ CRITICAL: Add diagnostic logging for WINDOW_OPEN phase
+                window_active = current_state.get('window_active', False)
+                armed_direction = current_state.get('armed_direction', 'Unknown')
+                self.terminal_log(f"🔧 WINDOW: {symbol} monitoring | state={entry_state} | direction={armed_direction} | active={window_active} | df_len={len(df)}", 
+                                "DEBUG", critical=True)
+            
             # Get crossover data
             crossover_data = current_state.get('crossover_data', {})
             bullish_cross = crossover_data.get('bullish_crossover', False)
@@ -1390,7 +1434,8 @@ class AdvancedMT5TradingMonitorGUI:
                     # ⚠️ CRITICAL: df already has forming candle removed at line 747!
                     # Use iloc[-1] for the CURRENT closed candle that triggered the crossover
                     if len(df) >= 1:
-                        arming_candle_time = df.index[-1] if len(df.index) > 0 else current_dt
+                        # ✅ FIX: Use 'time' column for timestamp, NOT df.index
+                        arming_candle_time = df['time'].iloc[-1] if len(df) > 0 else current_dt
                         
                         current_state['signal_trigger_candle'] = {
                             'open': float(df['open'].iloc[-1]),
@@ -1405,7 +1450,8 @@ class AdvancedMT5TradingMonitorGUI:
                         # ✅ CRITICAL FIX: Mark CURRENT last closed candle as already processed
                         # The crossover is detected on the current closed candle (index -1)
                         # We must mark it to prevent checking the arming candle itself for pullbacks
-                        current_last_candle_time = df.index[-1]
+                        # ✅ FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
+                        current_last_candle_time = df['time'].iloc[-1]
                         current_state['last_pullback_check_candle'] = current_last_candle_time
                     
                     # ✅ CRITICAL FIX: Clear crossover flags after consuming them
@@ -1440,6 +1486,10 @@ class AdvancedMT5TradingMonitorGUI:
             elif entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
                 armed_direction = current_state['armed_direction']
                 
+                # ✅ DIAGNOSTIC: Log entry into ARMED pullback checking
+                self.terminal_log(f"🔧 DEBUG: {symbol} entered ARMED pullback check | armed_direction={armed_direction} | df_len={len(df)}", 
+                                "DEBUG", critical=True)
+                
                 # Safety check: If SHORT armed but disabled, reset
                 if armed_direction == 'SHORT' and not short_enabled:
                     self.terminal_log(f"⚠️ {symbol}: SHORT armed but disabled - Reset", 
@@ -1451,8 +1501,14 @@ class AdvancedMT5TradingMonitorGUI:
                 # So df.iloc[-1] IS the last CLOSED candle, not forming
                 # Don't remove another candle or we'll check old data
                 elif len(df) >= 1:  # Need at least 1 closed candle
-                    # Get the LAST CLOSED candle (df already excludes forming candle)
-                    last_closed_candle_time = df.index[-1] if len(df) > 0 else None
+                    # Get the LAST CLOSED candle TIMESTAMP (df already excludes forming candle)
+                    # ✅ FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
+                    last_closed_candle_time = df['time'].iloc[-1] if len(df) > 0 else None
+                    
+                    # ✅ DIAGNOSTIC: Log the candle being checked
+                    last_checked = current_state.get('last_pullback_check_candle', 'NONE')
+                    self.terminal_log(f"🔧 DEBUG: {symbol} pullback candle check | last_closed={last_closed_candle_time} | last_checked={last_checked} | Same? {last_closed_candle_time == last_checked}", 
+                                    "DEBUG", critical=True)
                     
                     # Check if we've already processed this closed candle
                     if 'last_pullback_check_candle' in current_state and current_state['last_pullback_check_candle'] == last_closed_candle_time:
@@ -1559,8 +1615,17 @@ class AdvancedMT5TradingMonitorGUI:
                 if breakout_status == 'SUCCESS':
                     self.terminal_log(f"✅ {symbol}: BREAKOUT detected - Entry conditions met!", 
                                     "SUCCESS", critical=True)
-                    # In real trading, entry would execute here
-                    # For monitor, just reset to allow new cycle
+                    
+                    # Execute trade in MT5
+                    entry_price = current_close
+                    trade_executed = self.execute_trade(symbol, armed_direction, entry_price, config)
+                    
+                    if trade_executed:
+                        self.terminal_log(f"🎯 {symbol}: Trade executed successfully!", "SUCCESS", critical=True)
+                    else:
+                        self.terminal_log(f"⚠️ {symbol}: Trade execution failed!", "WARNING", critical=True)
+                    
+                    # Reset to allow new cycle
                     self._reset_entry_state(symbol)
                     entry_state = 'SCANNING'
                     
@@ -2323,6 +2388,137 @@ class AdvancedMT5TradingMonitorGUI:
         else:
             self.initialize_mt5_connection()
             
+    def execute_trade(self, symbol: str, direction: str, price: float, config: Dict):
+        """Execute a trade in MT5
+        
+        Args:
+            symbol: Trading symbol (e.g., 'XAUUSD')
+            direction: 'LONG' or 'SHORT'
+            price: Entry price
+            config: Strategy configuration with risk parameters
+        """
+        if not mt5 or not self.mt5_connected:
+            self.terminal_log(f"❌ {symbol}: Cannot execute trade - MT5 not connected", "ERROR", critical=True)
+            return False
+            
+        try:
+            # Get symbol info
+            symbol_info = mt5.symbol_info(symbol)  # type: ignore
+            if symbol_info is None:
+                self.terminal_log(f"❌ {symbol}: Symbol not found in MT5", "ERROR", critical=True)
+                return False
+                
+            if not symbol_info.visible:
+                if not mt5.symbol_select(symbol, True):  # type: ignore
+                    self.terminal_log(f"❌ {symbol}: Failed to select symbol", "ERROR", critical=True)
+                    return False
+            
+            # Get account info for risk calculation
+            account_info = mt5.account_info()  # type: ignore
+            if account_info is None:
+                self.terminal_log(f"❌ {symbol}: Failed to get account info", "ERROR", critical=True)
+                return False
+            
+            # Calculate position size based on risk
+            balance = account_info.balance
+            risk_percent = config.get('RISK_PER_TRADE', 0.01)  # Default 1%
+            risk_amount = balance * risk_percent
+            
+            # Get ATR for stop loss calculation
+            atr_multiplier = config.get('ATR_SL_MULTIPLIER', 4.5)
+            current_state = self.strategy_states.get(symbol, {})
+            atr = current_state.get('atr', None)
+            
+            if atr is None or atr <= 0:
+                self.terminal_log(f"❌ {symbol}: Invalid ATR value for stop loss calculation", "ERROR", critical=True)
+                return False
+            
+            # Calculate stop loss distance
+            sl_distance = atr * atr_multiplier
+            
+            # Calculate lot size based on risk
+            point = symbol_info.point
+            tick_value = symbol_info.trade_tick_value
+            if tick_value == 0:
+                tick_value = symbol_info.trade_contract_size * point
+            
+            # Lot size = Risk Amount / (SL Distance in ticks * Tick Value)
+            sl_ticks = sl_distance / point
+            lot_size = risk_amount / (sl_ticks * tick_value)
+            
+            # Apply lot size limits
+            lot_min = symbol_info.volume_min
+            lot_max = symbol_info.volume_max
+            lot_step = symbol_info.volume_step
+            
+            # Round to valid lot step
+            lot_size = round(lot_size / lot_step) * lot_step
+            lot_size = max(lot_min, min(lot_size, lot_max))
+            lot_size = max(lot_min, min(lot_size, 0.1))  # Additional safety limit
+            
+            # Prepare order parameters
+            order_type = mt5.ORDER_TYPE_BUY if direction == 'LONG' else mt5.ORDER_TYPE_SELL  # type: ignore
+            
+            # Set stop loss and take profit
+            if direction == 'LONG':
+                sl_price = price - sl_distance
+                tp_multiplier = config.get('ATR_TP_MULTIPLIER', 6.5)
+                tp_price = price + (atr * tp_multiplier)
+            else:  # SHORT
+                sl_price = price + sl_distance
+                tp_multiplier = config.get('ATR_TP_MULTIPLIER', 6.5)
+                tp_price = price - (atr * tp_multiplier)
+            
+            # Round prices to symbol digits
+            digits = symbol_info.digits
+            sl_price = round(sl_price, digits)
+            tp_price = round(tp_price, digits)
+            
+            # Create order request
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,  # type: ignore
+                "symbol": symbol,
+                "volume": lot_size,
+                "type": order_type,
+                "price": price,
+                "sl": sl_price,
+                "tp": tp_price,
+                "deviation": 20,
+                "magic": 234000,
+                "comment": f"Sunrise_{direction}",
+                "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
+                "type_filling": mt5.ORDER_FILLING_IOC,  # type: ignore
+            }
+            
+            # Log trade details
+            self.terminal_log(f"📊 {symbol}: Preparing {direction} order", "INFO", critical=True)
+            self.terminal_log(f"   Volume: {lot_size} lots | Entry: {price}", "INFO", critical=True)
+            self.terminal_log(f"   SL: {sl_price} | TP: {tp_price}", "INFO", critical=True)
+            self.terminal_log(f"   Risk: ${risk_amount:.2f} ({risk_percent*100:.1f}%)", "INFO", critical=True)
+            
+            # Send order
+            result = mt5.order_send(request)  # type: ignore
+            
+            if result is None:
+                self.terminal_log(f"❌ {symbol}: Order send failed - No response", "ERROR", critical=True)
+                return False
+            
+            if result.retcode != mt5.TRADE_RETCODE_DONE:  # type: ignore
+                self.terminal_log(f"❌ {symbol}: Order failed - Code: {result.retcode}, {result.comment}", 
+                                "ERROR", critical=True)
+                return False
+            
+            # Success!
+            self.terminal_log(f"✅ {symbol}: Order executed successfully!", "SUCCESS", critical=True)
+            self.terminal_log(f"   Order: #{result.order} | Deal: #{result.deal}", "SUCCESS", critical=True)
+            self.terminal_log(f"   Volume: {result.volume} lots @ {result.price}", "SUCCESS", critical=True)
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"❌ {symbol}: Trade execution error: {str(e)}", "ERROR", critical=True)
+            return False
+    
     def disconnect_mt5(self):
         """Disconnect from MT5"""
         if mt5:
