@@ -22,12 +22,19 @@ import queue
 try:
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.backends._backend_tk import NavigationToolbar2Tk
     from matplotlib.figure import Figure
     import matplotlib.dates as mdates
     from matplotlib.patches import Rectangle
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
+    plt = None  # type: ignore
+    FigureCanvasTkAgg = None  # type: ignore
+    NavigationToolbar2Tk = None  # type: ignore
+    Figure = None  # type: ignore
+    mdates = None  # type: ignore
+    Rectangle = None  # type: ignore
 
 # Dynamic imports to avoid VS Code warnings
 def dynamic_import(module_name: str, package_name: Optional[str] = None):
@@ -57,9 +64,9 @@ try:
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     DEPENDENCIES_AVAILABLE = False
-    mt5 = None
-    pd = None
-    np = None
+    mt5 = None  # type: ignore
+    pd = None  # type: ignore
+    np = None  # type: ignore
 
 # Dynamic import of signal processing modules
 sunrise_signal_adapter = dynamic_import("sunrise_signal_adapter", "src")
@@ -99,6 +106,25 @@ class AdvancedMT5TradingMonitorGUI:
         self.signals_history = []
         self.connection_history = []
         self.signal_manager = None
+        
+        # Smart logging controls
+        self.last_hourly_summary = datetime.now()
+        self.hourly_events = {
+            'crossovers': 0,
+            'armed_transitions': 0,
+            'pullbacks_detected': 0,
+            'windows_opened': 0,
+            'breakouts': 0,
+            'invalidations': 0,
+            'trades_executed': 0
+        }
+        
+        # Bot startup timestamp - used to ignore old crossovers
+        self.bot_startup_time = datetime.now()
+        
+        # Recursion guard for hourly summary
+        self._in_hourly_summary = False
+        
         self.data_provider = None
         
         # Threading and communication
@@ -126,11 +152,23 @@ class AdvancedMT5TradingMonitorGUI:
         
     def setup_logging(self):
         """Configure logging system"""
+        # Configure stream handler with UTF-8 encoding
+        import sys
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setLevel(logging.INFO)
+        
+        # Force UTF-8 encoding on Windows
+        if hasattr(sys.stdout, 'reconfigure'):
+            try:
+                sys.stdout.reconfigure(encoding='utf-8')  # type: ignore
+            except Exception:
+                pass  # Fallback if reconfigure fails
+        
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.StreamHandler(),
+                stream_handler,
                 logging.FileHandler('mt5_advanced_monitor.log')
             ]
         )
@@ -349,8 +387,8 @@ class AdvancedMT5TradingMonitorGUI:
         scrollbar_markers.pack(side=tk.RIGHT, fill=tk.Y)
         
     def setup_chart(self, parent):
-        """Setup matplotlib chart"""
-        if not MATPLOTLIB_AVAILABLE:
+        """Setup matplotlib chart with standard navigation toolbar"""
+        if not MATPLOTLIB_AVAILABLE or Figure is None or FigureCanvasTkAgg is None:
             return
             
         # Create figure and axis
@@ -359,14 +397,23 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Create canvas
         self.canvas = FigureCanvasTkAgg(self.fig, parent)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Add standard Matplotlib navigation toolbar BEFORE packing canvas
+        # This provides: Home, Back, Forward, Pan, Zoom, Configure, Save
+        if NavigationToolbar2Tk is not None:
+            self.toolbar = NavigationToolbar2Tk(self.canvas, parent)
+            self.toolbar.update()
+            self.toolbar.pack(side=tk.TOP, fill=tk.X)
+        
+        # Pack canvas AFTER toolbar so toolbar appears on top
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
         # Initialize empty chart
         self.ax.set_title("Live Chart - Select Symbol")
         self.ax.set_xlabel("Time")
         self.ax.set_ylabel("Price")
         self.fig.tight_layout()
-        
+    
     def create_status_bar(self):
         """Create the status bar at the bottom"""
         self.status_frame = ttk.Frame(self.root)
@@ -393,6 +440,13 @@ class AdvancedMT5TradingMonitorGUI:
         
         for symbol in symbols:
             try:
+                # Get symbol precision from MT5
+                digits = 5  # Default
+                if mt5:
+                    symbol_info = mt5.symbol_info(symbol)  # type: ignore
+                    if symbol_info:
+                        digits = symbol_info.digits
+                
                 # Initialize strategy state - matching original strategy state machine
                 self.strategy_states[symbol] = {
                     'entry_state': 'SCANNING',  # SCANNING, ARMED_LONG, ARMED_SHORT, WINDOW_OPEN
@@ -412,7 +466,8 @@ class AdvancedMT5TradingMonitorGUI:
                     'last_update': datetime.now(),
                     'indicators': {},
                     'signals': [],
-                    'crossover_data': {}
+                    'crossover_data': {},
+                    'digits': digits  # MT5 symbol precision for display formatting
                 }
                 
                 # Load configuration from strategy file
@@ -538,21 +593,21 @@ class AdvancedMT5TradingMonitorGUI:
         
     def initialize_mt5_connection(self):
         """Initialize MetaTrader5 connection"""
-        if not DEPENDENCIES_AVAILABLE:
+        if not DEPENDENCIES_AVAILABLE or mt5 is None:
             self.terminal_log("❌ ERROR: Required dependencies not available", "ERROR")
             return False
             
         try:
             # Initialize MT5
-            if not mt5.initialize():
-                self.terminal_log(f"❌ Failed to initialize MT5: {mt5.last_error()}", "ERROR")
+            if not mt5.initialize():  # type: ignore
+                self.terminal_log(f"❌ Failed to initialize MT5: {mt5.last_error()}", "ERROR")  # type: ignore
                 return False
                 
             # Get account info
-            account_info = mt5.account_info()
+            account_info = mt5.account_info()  # type: ignore
             if account_info is None:
                 self.terminal_log("❌ Failed to get account info", "ERROR")
-                mt5.shutdown()
+                mt5.shutdown()  # type: ignore
                 return False
                 
             self.mt5_connected = True
@@ -612,10 +667,24 @@ class AdvancedMT5TradingMonitorGUI:
         self.monitor_thread = threading.Thread(target=self.advanced_monitoring_loop, daemon=True)
         self.monitor_thread.start()
         
-        self.terminal_log("=" * 60, "SUCCESS", critical=True)
-        self.terminal_log("🚀 BOT IS LIVE - Advanced Monitoring Active", "SUCCESS", critical=True)
-        self.terminal_log("📊 Tracking: EMA crossovers, Phase changes, Entry signals", "SUCCESS", critical=True)
-        self.terminal_log("=" * 60, "SUCCESS", critical=True)
+        # Startup Summary
+        self.terminal_log("=" * 70, "SUCCESS", critical=True)
+        self.terminal_log("🚀 MT5 TRADING BOT - SUNRISE OGLE STRATEGY ACTIVATED", "SUCCESS", critical=True)
+        self.terminal_log("=" * 70, "SUCCESS", critical=True)
+        self.terminal_log(f"📈 Monitored Pairs: {', '.join(self.strategy_states.keys())}", "INFO", critical=True)
+        self.terminal_log(f"⏱️ Timeframe: 5-Minute (M5)", "INFO", critical=True)
+        self.terminal_log(f"🎯 Strategy: 4-Phase State Machine (SCANNING → ARMED → PULLBACK → WINDOW → ENTRY)", "INFO", critical=True)
+        self.terminal_log("", "INFO", critical=True)
+        self.terminal_log("📊 Tracking:", "INFO", critical=True)
+        self.terminal_log("   ✅ EMA crossover detection (Confirm vs Fast/Medium/Slow)", "INFO", critical=True)
+        self.terminal_log("   ✅ State transitions (ARMED_LONG/SHORT)", "INFO", critical=True)
+        self.terminal_log("   ✅ Pullback validation (bearish/bullish candles)", "INFO", critical=True)
+        self.terminal_log("   ✅ Breakout window monitoring", "INFO", critical=True)
+        self.terminal_log("   ✅ Global invalidation (counter-trend crossovers)", "INFO", critical=True)
+        self.terminal_log("", "INFO", critical=True)
+        self.terminal_log("💡 Note: Only key events shown. Full log in terminal_log.txt", "INFO", critical=True)
+        self.terminal_log("📊 Hourly summary will be displayed every 60 minutes", "INFO", critical=True)
+        self.terminal_log("=" * 70, "SUCCESS", critical=True)
         
     def stop_monitoring(self):
         """Stop the monitoring process"""
@@ -657,17 +726,28 @@ class AdvancedMT5TradingMonitorGUI:
     def monitor_strategy_phase(self, symbol):
         """Monitor individual strategy phase and state"""
         try:
-            if not mt5:
+            if not mt5 or pd is None:
                 return
                 
-            # Get current market data
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 100)
-            if rates is None or len(rates) < 50:
+            # Get current market data with sufficient history for EMA(70) stability
+            # EMA needs ~3x period to stabilize: EMA(70) * 3 = 210 bars minimum
+            # Using 501 bars ensures all EMAs (18, 24, 70) are fully stabilized
+            # Fetch extra bar because position 0 is forming/incomplete candle
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 501)  # type: ignore
+            if rates is None or len(rates) < 200:
                 return
                 
             # Convert to DataFrame
-            df = pd.DataFrame(rates)
-            df['time'] = pd.to_datetime(df['time'], unit='s')
+            df = pd.DataFrame(rates)  # type: ignore
+            df['time'] = pd.to_datetime(df['time'], unit='s')  # type: ignore
+            
+            # ✅ CRITICAL FIX: Remove the last (forming) candle to match MT5 behavior
+            # MT5 indicators only use closed candles, not the forming one
+            # This ensures EMAs calculated match MT5 exactly
+            df = df.iloc[:-1].copy()  # Remove last row (forming candle)
+            
+            if len(df) < 200:  # Verify we still have enough data after removal
+                return
             
             # Calculate indicators
             indicators = self.calculate_indicators(df, symbol)
@@ -687,7 +767,8 @@ class AdvancedMT5TradingMonitorGUI:
                 if current_phase == 'WAITING_PULLBACK':
                     transition_msg += f" | Signal detected, waiting for pullback"
                 elif current_phase == 'WAITING_BREAKOUT':
-                    pullback_count = np.random.randint(1, 4)  # Simulate pullback count
+                    import random
+                    pullback_count = random.randint(1, 3)  # Simulate pullback count
                     state['pullback_count'] = pullback_count
                     transition_msg += f" | Pullback complete ({pullback_count} candles), window opening"
                     state['window_active'] = True
@@ -702,7 +783,8 @@ class AdvancedMT5TradingMonitorGUI:
                 # Add price and indicator context
                 current_price = indicators.get('current_price', 0)
                 trend = indicators.get('trend', 'UNKNOWN')
-                transition_msg += f" | Price: {current_price:.5f} | Trend: {trend}"
+                digits = state.get('digits', 5)
+                transition_msg += f" | Price: {current_price:.{digits}f} | Trend: {trend}"
                 
                 self.terminal_log(transition_msg, current_phase.replace('WAITING_', ''))
                 state['phase'] = current_phase
@@ -714,9 +796,10 @@ class AdvancedMT5TradingMonitorGUI:
             state['indicators'] = indicators
             state['last_update'] = datetime.now()
             
-            # Store chart data
+            # Store chart data with sufficient history for EMA visualization
+            # Keep last 250 bars to show EMAs properly (even EMA(70) needs ~210 bars to stabilize)
             self.chart_data[symbol] = {
-                'df': df.tail(50),  # Keep last 50 bars for charting
+                'df': df.tail(250),  # Keep last 250 bars for proper EMA charting
                 'indicators': indicators,
                 'timestamp': datetime.now()
             }
@@ -740,9 +823,10 @@ class AdvancedMT5TradingMonitorGUI:
             return
         
         try:
-            # Use second-to-last candle (last CLOSED candle) for signal detection
-            # The last candle (df[-1]) is the FORMING candle and should not trigger signals
-            current_closed_candle_time = df['time'].iloc[-2] if len(df) >= 2 else None
+            # ⚠️ CRITICAL: df already has forming candle removed at line 747!
+            # So df.iloc[-1] IS the last CLOSED candle, not forming candle
+            # Don't use iloc[-2] or df[:-1] or we'll process old data!
+            current_closed_candle_time = df['time'].iloc[-1] if len(df) >= 1 else None
             
             # Check if we've already processed this closed candle for crossovers
             state = self.strategy_states.get(symbol, {})
@@ -759,8 +843,9 @@ class AdvancedMT5TradingMonitorGUI:
             # Mark this candle as processed
             state['last_crossover_check_candle'] = current_closed_candle_time
             
-            # Calculate EMAs on CLOSED candles only (exclude the forming candle)
-            df_closed = df[:-1]  # Exclude the last (forming) candle
+            # ⚠️ CRITICAL: df already contains ONLY closed candles (forming removed at line 747)
+            # Use df directly, don't remove another candle!
+            df_closed = df
             
             if len(df_closed) < 20:
                 return  # Need enough data for EMA calculation
@@ -797,39 +882,102 @@ class AdvancedMT5TradingMonitorGUI:
             bearish_crossover = False
             
             # Detect BULLISH crossovers (confirm EMA crosses ABOVE)
+            # Count individual crossovers but only log summary
+            bullish_count = 0
             if confirm_ema > fast_ema and prev_confirm <= prev_fast:
-                self.terminal_log(f"🟢 {symbol}: Confirm EMA CROSSED ABOVE Fast EMA - BULLISH SIGNAL! (Candle: {current_closed_candle_time})", 
-                                "SUCCESS", critical=True)
+                bullish_count += 1
                 bullish_crossover = True
             
             if confirm_ema > medium_ema and prev_confirm <= prev_medium:
-                self.terminal_log(f"🟢 {symbol}: Confirm EMA CROSSED ABOVE Medium EMA - BULLISH SIGNAL! (Candle: {current_closed_candle_time})", 
-                                "SUCCESS", critical=True)
+                bullish_count += 1
                 bullish_crossover = True
             
             if confirm_ema > slow_ema and prev_confirm <= prev_slow:
-                self.terminal_log(f"🟢 {symbol}: Confirm EMA CROSSED ABOVE Slow EMA - BULLISH SIGNAL! (Candle: {current_closed_candle_time})", 
-                                "SUCCESS", critical=True)
+                bullish_count += 1
                 bullish_crossover = True
             
             # Detect BEARISH crossovers (confirm EMA crosses BELOW)
+            bearish_count = 0
             if confirm_ema < fast_ema and prev_confirm >= prev_fast:
-                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW Fast EMA - BEARISH SIGNAL! (Candle: {current_closed_candle_time})", 
-                                "ERROR", critical=True)
+                bearish_count += 1
                 bearish_crossover = True
             
             if confirm_ema < medium_ema and prev_confirm >= prev_medium:
-                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW Medium EMA - BEARISH SIGNAL! (Candle: {current_closed_candle_time})", 
-                                "ERROR", critical=True)
+                bearish_count += 1
                 bearish_crossover = True
             
             if confirm_ema < slow_ema and prev_confirm >= prev_slow:
-                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW Slow EMA - BEARISH SIGNAL! (Candle: {current_closed_candle_time})", 
-                                "ERROR", critical=True)
+                bearish_count += 1
                 bearish_crossover = True
+            
+            # ✅ CRITICAL: Ignore crossovers that happened BEFORE bot startup
+            # This prevents "stale" signals from triggering setups on restart
+            crossover_is_stale = False
+            if hasattr(self, 'bot_startup_time') and isinstance(self.bot_startup_time, datetime):
+                # Convert to timezone-aware if needed for comparison
+                startup_time = self.bot_startup_time
+                if isinstance(current_closed_candle_time, datetime):
+                    if startup_time.tzinfo is None and current_closed_candle_time.tzinfo is not None:
+                        startup_time = startup_time.replace(tzinfo=current_closed_candle_time.tzinfo)
+                    elif startup_time.tzinfo is not None and current_closed_candle_time.tzinfo is None:
+                        current_closed_candle_time_aware = current_closed_candle_time.replace(tzinfo=startup_time.tzinfo)
+                        if current_closed_candle_time_aware < startup_time:
+                            crossover_is_stale = True
+                    elif current_closed_candle_time < startup_time:
+                        crossover_is_stale = True
+            
+            # Only log if crossover detected (summary format)
+            if bullish_count > 0:
+                ema_names = []
+                if bullish_count >= 3:
+                    ema_names = ["Fast", "Medium", "Slow"]
+                elif bullish_count == 2:
+                    if confirm_ema > fast_ema and prev_confirm <= prev_fast:
+                        ema_names.append("Fast")
+                    if confirm_ema > medium_ema and prev_confirm <= prev_medium:
+                        ema_names.append("Medium")
+                    if confirm_ema > slow_ema and prev_confirm <= prev_slow:
+                        ema_names.append("Slow")
+                else:
+                    if confirm_ema > fast_ema and prev_confirm <= prev_fast:
+                        ema_names = ["Fast"]
+                    elif confirm_ema > medium_ema and prev_confirm <= prev_medium:
+                        ema_names = ["Medium"]
+                    else:
+                        ema_names = ["Slow"]
+                
+                self.terminal_log(f"� {symbol}: Confirm EMA CROSSED ABOVE {'/'.join(ema_names)} EMA - BULLISH! (Candle: {current_closed_candle_time})", 
+                                "SUCCESS", critical=True)
+            
+            if bearish_count > 0:
+                ema_names = []
+                if bearish_count >= 3:
+                    ema_names = ["Fast", "Medium", "Slow"]
+                elif bearish_count == 2:
+                    if confirm_ema < fast_ema and prev_confirm >= prev_fast:
+                        ema_names.append("Fast")
+                    if confirm_ema < medium_ema and prev_confirm >= prev_medium:
+                        ema_names.append("Medium")
+                    if confirm_ema < slow_ema and prev_confirm >= prev_slow:
+                        ema_names.append("Slow")
+                else:
+                    if confirm_ema < fast_ema and prev_confirm >= prev_fast:
+                        ema_names = ["Fast"]
+                    elif confirm_ema < medium_ema and prev_confirm >= prev_medium:
+                        ema_names = ["Medium"]
+                    else:
+                        ema_names = ["Slow"]
+                
+                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW {'/'.join(ema_names)} EMA - BEARISH! (Candle: {current_closed_candle_time})", 
+                                "ERROR", critical=True)
             
             # Store crossover data for phase logic
             if symbol in self.strategy_states:
+                # Clear stale crossovers (those that occurred before bot startup)
+                if crossover_is_stale:
+                    bullish_crossover = False
+                    bearish_crossover = False
+                
                 self.strategy_states[symbol]['crossover_data'] = {
                     'bullish_crossover': bullish_crossover,
                     'bearish_crossover': bearish_crossover,
@@ -870,10 +1018,11 @@ class AdvancedMT5TradingMonitorGUI:
                 return indicators
             
             # Calculate EMAs with actual periods
-            indicators['ema_fast'] = df['close'].ewm(span=fast_period).mean().iloc[-1]
-            indicators['ema_medium'] = df['close'].ewm(span=medium_period).mean().iloc[-1]
-            indicators['ema_slow'] = df['close'].ewm(span=slow_period).mean().iloc[-1]
-            indicators['ema_filter'] = df['close'].ewm(span=filter_period).mean().iloc[-1]
+            # ✅ CRITICAL FIX: Use adjust=False to match standard EMA formula (MT5/backtrader)
+            indicators['ema_fast'] = df['close'].ewm(span=fast_period, adjust=False).mean().iloc[-1]
+            indicators['ema_medium'] = df['close'].ewm(span=medium_period, adjust=False).mean().iloc[-1]
+            indicators['ema_slow'] = df['close'].ewm(span=slow_period, adjust=False).mean().iloc[-1]
+            indicators['ema_filter'] = df['close'].ewm(span=filter_period, adjust=False).mean().iloc[-1]
             
             # Store periods for display
             indicators['ema_fast_period'] = fast_period
@@ -881,13 +1030,25 @@ class AdvancedMT5TradingMonitorGUI:
             indicators['ema_slow_period'] = slow_period
             indicators['ema_filter_period'] = filter_period
             
+            # 🔍 DEBUG: Log EMA(70) calculation details for comparison with MT5
+            if symbol == "EURUSD" and len(df) > 0:
+                last_candle_time = df['time'].iloc[-1]
+                last_close = df['close'].iloc[-1]
+                ema_70 = indicators['ema_filter']
+                num_bars = len(df)
+                self.terminal_log(
+                    f"🔍 EMA(70) DEBUG - {symbol}: Time={last_candle_time}, "
+                    f"Close={last_close:.5f}, EMA(70)={ema_70:.5f}, Bars={num_bars}",
+                    "NORMAL"
+                )
+            
             # ATR calculation
-            if len(df) > 1:
+            if len(df) > 1 and np is not None and pd is not None:
                 high_low = df['high'] - df['low']
-                high_close = np.abs(df['high'] - df['close'].shift())
-                low_close = np.abs(df['low'] - df['close'].shift())
-                ranges = pd.concat([high_low, high_close, low_close], axis=1)
-                true_range = np.max(ranges, axis=1)
+                high_close = np.abs(df['high'] - df['close'].shift())  # type: ignore
+                low_close = np.abs(df['low'] - df['close'].shift())  # type: ignore
+                ranges = pd.concat([high_low, high_close, low_close], axis=1)  # type: ignore
+                true_range = np.max(ranges, axis=1)  # type: ignore
                 indicators['atr'] = true_range.rolling(atr_period).mean().iloc[-1]
             else:
                 indicators['atr'] = 0.0001
@@ -922,13 +1083,17 @@ class AdvancedMT5TradingMonitorGUI:
                 indicators['trend'] = 'SIDEWAYS'
                 
             # EMA array for charting
-            indicators['ema_fast_array'] = df['close'].ewm(span=fast_period).mean()
-            indicators['ema_medium_array'] = df['close'].ewm(span=medium_period).mean()
-            indicators['ema_slow_array'] = df['close'].ewm(span=slow_period).mean()
-            indicators['ema_filter_array'] = df['close'].ewm(span=filter_period).mean()
+            # ✅ CRITICAL FIX: Use adjust=False to match standard EMA formula (like MT5/backtrader)
+            # adjust=True (pandas default) uses weighted average that changes with history
+            # adjust=False uses recursive formula: EMA = α * Price + (1-α) * EMA_prev
+            indicators['ema_fast_array'] = df['close'].ewm(span=fast_period, adjust=False).mean()
+            indicators['ema_medium_array'] = df['close'].ewm(span=medium_period, adjust=False).mean()
+            indicators['ema_slow_array'] = df['close'].ewm(span=slow_period, adjust=False).mean()
+            indicators['ema_filter_array'] = df['close'].ewm(span=filter_period, adjust=False).mean()
             
             # Add confirm EMA for crossover detection
-            indicators['ema_confirm'] = df['close'].ewm(span=1).mean().iloc[-1]
+            # EMA(1) with adjust=False is essentially the close price itself
+            indicators['ema_confirm'] = df['close'].ewm(span=1, adjust=False).mean().iloc[-1]
             
             # Detect EMA crossovers (critical events)
             self.detect_ema_crossovers(symbol, indicators, df)
@@ -1056,7 +1221,8 @@ class AdvancedMT5TradingMonitorGUI:
         state['phase'] = 'WAITING_BREAKOUT'
         state['window_active'] = True
         
-        self.terminal_log(f"📈 {symbol}: Window opened - Top: {state['window_top_limit']:.5f}, Bottom: {state['window_bottom_limit']:.5f}", 
+        digits = state.get('digits', 5)
+        self.terminal_log(f"📈 {symbol}: Window opened - Top: {state['window_top_limit']:.{digits}f}, Bottom: {state['window_bottom_limit']:.{digits}f}", 
                         "INFO", critical=False)
     
     def _phase4_monitor_window(self, symbol, df, armed_direction, current_bar, current_dt, config):
@@ -1221,19 +1387,51 @@ class AdvancedMT5TradingMonitorGUI:
                     current_state['pullback_candle_count'] = 0
                     
                     # Store trigger candle (using last closed candle from dataframe)
-                    if len(df) >= 2:
+                    # ⚠️ CRITICAL: df already has forming candle removed at line 747!
+                    # Use iloc[-1] for the CURRENT closed candle that triggered the crossover
+                    if len(df) >= 1:
+                        arming_candle_time = df.index[-1] if len(df.index) > 0 else current_dt
+                        
                         current_state['signal_trigger_candle'] = {
-                            'open': float(df['open'].iloc[-2]),
-                            'close': float(df['close'].iloc[-2]),
-                            'high': float(df['high'].iloc[-2]),
-                            'low': float(df['low'].iloc[-2]),
-                            'datetime': df.index[-2] if len(df.index) > 1 else current_dt,
-                            'is_bullish': df['close'].iloc[-2] > df['open'].iloc[-2],
-                            'is_bearish': df['close'].iloc[-2] < df['open'].iloc[-2]
+                            'open': float(df['open'].iloc[-1]),
+                            'close': float(df['close'].iloc[-1]),
+                            'high': float(df['high'].iloc[-1]),
+                            'low': float(df['low'].iloc[-1]),
+                            'datetime': arming_candle_time,
+                            'is_bullish': df['close'].iloc[-1] > df['open'].iloc[-1],
+                            'is_bearish': df['close'].iloc[-1] < df['open'].iloc[-1]
                         }
+                        
+                        # ✅ CRITICAL FIX: Mark CURRENT last closed candle as already processed
+                        # The crossover is detected on the current closed candle (index -1)
+                        # We must mark it to prevent checking the arming candle itself for pullbacks
+                        current_last_candle_time = df.index[-1]
+                        current_state['last_pullback_check_candle'] = current_last_candle_time
                     
-                    self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - State: SCANNING → ARMED_{signal_direction}", 
+                    # ✅ CRITICAL FIX: Clear crossover flags after consuming them
+                    # This prevents re-arming on the same crossover signal repeatedly
+                    current_state['crossover_data'] = {
+                        'bullish_crossover': False,
+                        'bearish_crossover': False,
+                        'candle_time': crossover_data.get('candle_time', current_dt)
+                    }
+                    
+                    # Get current price for context
+                    current_price = df['close'].iloc[-1] if len(df) > 0 else 0
+                    digits = current_state.get('digits', 5)
+                    
+                    # Get pullback requirements
+                    if signal_direction == 'LONG':
+                        max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
+                        pullback_type = "BEARISH (Red)"
+                    else:
+                        max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
+                        pullback_type = "BULLISH (Green)"
+                    
+                    self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - State: SCANNING → ARMED_{signal_direction} | Price: {current_price:.{digits}f}", 
                                     "SUCCESS", critical=True)
+                    self.terminal_log(f"📋 {symbol}: NOW MONITORING for {max_candles} {pullback_type} pullback candles...", 
+                                    "INFO", critical=True)
                     entry_state = f"ARMED_{signal_direction}"
             
             # ---------------------------------------------------------------
@@ -1249,71 +1447,109 @@ class AdvancedMT5TradingMonitorGUI:
                     self._reset_entry_state(symbol)
                     entry_state = 'SCANNING'
                 
-                # ⚠️ CRITICAL: Only check pullbacks on NEW CANDLE, not every tick!
-                # Original strategy checks in next() which is called per closed candle
-                # Track if we've already processed this candle for pullback
-                elif len(df) >= 1 and 'last_pullback_check_candle' in current_state and current_state['last_pullback_check_candle'] == current_candle_time:
-                    # Already processed this candle, skip pullback check until new candle
-                    pass
-                
-                # Check for pullback candles (ONLY on new candles)
-                elif len(df) >= 1:
-                    current_close = df['close'].iloc[-1]
-                    current_open = df['open'].iloc[-1]
-                    current_high = df['high'].iloc[-1]
-                    current_low = df['low'].iloc[-1]
+                # ⚠️ CRITICAL: df already has forming candle removed at line 747!
+                # So df.iloc[-1] IS the last CLOSED candle, not forming
+                # Don't remove another candle or we'll check old data
+                elif len(df) >= 1:  # Need at least 1 closed candle
+                    # Get the LAST CLOSED candle (df already excludes forming candle)
+                    last_closed_candle_time = df.index[-1] if len(df) > 0 else None
                     
-                    is_pullback_candle = False
-                    
-                    if armed_direction == 'LONG':
-                        # LONG pullback = bearish candle (close < open)
-                        is_pullback_candle = current_close < current_open
-                    elif armed_direction == 'SHORT':
-                        # SHORT pullback = bullish candle (close > open)
-                        is_pullback_candle = current_close > current_open
-                    
-                    # Mark this candle as processed to avoid re-checking on next tick
-                    current_state['last_pullback_check_candle'] = current_candle_time
-                    
-                    if is_pullback_candle:
-                        # Increment pullback count
-                        current_state['pullback_candle_count'] += 1
+                    # Check if we've already processed this closed candle
+                    if 'last_pullback_check_candle' in current_state and current_state['last_pullback_check_candle'] == last_closed_candle_time:
+                        # Already processed this closed candle, waiting for next candle to close
+                        pullback_type = "Bearish" if armed_direction == 'LONG' else "Bullish"
+                        current_count = current_state.get('pullback_candle_count', 0)
+                        # Reduce spam - only log once per minute
+                        import time
+                        now = time.time()
+                        if not hasattr(current_state, '_last_forming_log') or (now - current_state.get('_last_forming_log', 0)) > 60:
+                            self.terminal_log(f">> WAITING: {symbol} {armed_direction} waiting for next {pullback_type} candle | count={current_count}/2", 
+                                            "INFO", critical=False)
+                            current_state['_last_forming_log'] = now
+                    elif last_closed_candle_time is not None:
+                        # NEW CLOSED CANDLE - Check for pullback
+                        current_close = df['close'].iloc[-1]
+                        current_open = df['open'].iloc[-1]
+                        current_high = df['high'].iloc[-1]
+                        current_low = df['low'].iloc[-1]
                         
-                        # Get max pullback requirement
+                        # Get max pullback requirement for logging
                         max_candles = 2  # Default
                         if armed_direction == 'LONG':
                             max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
                         else:
                             max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
                         
-                        # Check if pullback complete
-                        if current_state['pullback_candle_count'] >= max_candles:
-                            # Store last pullback candle data for window calculation
-                            current_state['last_pullback_candle_high'] = float(current_high)
-                            current_state['last_pullback_candle_low'] = float(current_low)
+                        current_count = current_state.get('pullback_candle_count', 0)
+                        
+                        # ✅ LOG EVERY CANDLE CHECKED IN ARMED STATE
+                        candle_time_str = last_closed_candle_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(last_closed_candle_time, 'strftime') else str(last_closed_candle_time)
+                        self.terminal_log(f"🔍 CHECKING CANDLE: {symbol} {armed_direction} | Time: {candle_time_str} | O:{current_open:.5f} H:{current_high:.5f} L:{current_low:.5f} C:{current_close:.5f} | Count: {current_count}/{max_candles}", 
+                                        "INFO", critical=True)
+                        
+                        is_pullback_candle = False
+                        
+                        if armed_direction == 'LONG':
+                            # LONG pullback = bearish candle (close < open)
+                            is_pullback_candle = current_close < current_open
+                        elif armed_direction == 'SHORT':
+                            # SHORT pullback = bullish candle (close > open)
+                            is_pullback_candle = current_close > current_open
+                        
+                        # Mark this closed candle as processed
+                        current_state['last_pullback_check_candle'] = last_closed_candle_time
+                        
+                        if is_pullback_candle:
+                            # Increment pullback count
+                            current_state['pullback_candle_count'] += 1
                             
-                            # Transition to WINDOW_OPEN
-                            self._phase3_open_breakout_window(symbol, armed_direction, config, current_bar)
+                            # Get max pullback requirement
+                            max_candles = 2  # Default
+                            if armed_direction == 'LONG':
+                                max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
+                            else:
+                                max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
                             
-                            # Update BOTH local variable AND state dictionary
-                            current_state['entry_state'] = 'WINDOW_OPEN'
-                            current_state['phase'] = 'WAITING_BREAKOUT'
-                            entry_state = 'WINDOW_OPEN'
+                            # DEBUG: Show candle details
+                            candle_color = "BEARISH (Red)" if current_close < current_open else "BULLISH (Green)"
+                            self.terminal_log(f">> PULLBACK CANDLE: {symbol} {armed_direction} #{current_state['pullback_candle_count']}/{max_candles} | {candle_color} | O:{current_open:.5f} H:{current_high:.5f} L:{current_low:.5f} C:{current_close:.5f}", 
+                                            "INFO", critical=True)
                             
-                            self.terminal_log(f"🟢 {symbol}: Pullback CONFIRMED ({current_state['pullback_candle_count']}/{max_candles}) - Window OPENING", 
-                                            "SUCCESS", critical=True)
+                            # Check if pullback complete
+                            if current_state['pullback_candle_count'] >= max_candles:
+                                # Store last pullback candle data for window calculation
+                                current_state['last_pullback_candle_high'] = float(current_high)
+                                current_state['last_pullback_candle_low'] = float(current_low)
+                                
+                                # Transition to WINDOW_OPEN
+                                self._phase3_open_breakout_window(symbol, armed_direction, config, current_bar)
+                                
+                                # Update BOTH local variable AND state dictionary
+                                current_state['entry_state'] = 'WINDOW_OPEN'
+                                current_state['phase'] = 'WAITING_BREAKOUT'
+                                entry_state = 'WINDOW_OPEN'
+                                
+                                self.terminal_log(f"✅ {symbol}: Pullback CONFIRMED ({current_state['pullback_candle_count']}/{max_candles}) - Window OPENING", 
+                                                "SUCCESS", critical=True)
+                            else:
+                                # Still waiting for more pullback candles - SHOW THIS!
+                                candle_type = "Bearish" if armed_direction == 'LONG' else "Bullish"
+                                self.terminal_log(f"📉 {symbol}: {candle_type} pullback #{current_state['pullback_candle_count']}/{max_candles} detected (need {max_candles - current_state['pullback_candle_count']} more)", 
+                                                "INFO", critical=True)
                         else:
-                            # Still waiting for more pullback candles
-                            self.terminal_log(f"📊 {symbol}: Pullback counting ({current_state['pullback_candle_count']}/{max_candles})", 
-                                            "INFO", critical=False)
-                    else:
-                        # Non-pullback candle - GLOBAL INVALIDATION RULE
-                        self.terminal_log(f"⚠️ {symbol}: Non-pullback candle detected - Reset to SCANNING", 
-                                        "WARNING", critical=True)
-                        self._reset_entry_state(symbol)
-                        entry_state = 'SCANNING'
-            
-            # ---------------------------------------------------------------
+                            # Non-pullback candle - just wait, don't reset!
+                            # Only Global Invalidation (opposing EMA crossover) should reset the state
+                            candle_type = "Bullish" if current_close > current_open else "Bearish" if current_close < current_open else "Doji"
+                            candle_color = "GREEN" if current_close > current_open else "RED" if current_close < current_open else "NEUTRAL"
+                            
+                            # Explain WHY it's not a pullback
+                            if armed_direction == 'LONG':
+                                reason = f"NOT BEARISH (Close {current_close:.5f} >= Open {current_open:.5f})"
+                            else:
+                                reason = f"NOT BULLISH (Close {current_close:.5f} <= Open {current_open:.5f})"
+                            
+                            self.terminal_log(f"❌ NON-PULLBACK: {symbol} {armed_direction} | {candle_type} {candle_color} candle | {reason} | Count: {current_count}/{max_candles}", 
+                                            "INFO", critical=True)            # ---------------------------------------------------------------
             # PHASE 3: WINDOW_OPEN (Monitor for Breakout)
             # ---------------------------------------------------------------
             elif entry_state == 'WINDOW_OPEN':
@@ -1417,10 +1653,14 @@ class AdvancedMT5TradingMonitorGUI:
         try:
             display_text += f"📈 CURRENT MARKET DATA\n"
             
+            # Get symbol precision for dynamic formatting
+            state = self.strategy_states.get(symbol, {})
+            digits = state.get('digits', 5)  # Default to 5 if not found
+            
             # Safe formatting for price
             current_price = indicators.get('current_price', 'N/A')
             if isinstance(current_price, (int, float)):
-                display_text += f"Current Price: {current_price:.5f}\n"
+                display_text += f"Current Price: {current_price:.{digits}f}\n"
             else:
                 display_text += f"Current Price: {current_price}\n"
             display_text += f"Trend Direction: {indicators.get('trend', 'N/A')}\n\n"
@@ -1431,35 +1671,35 @@ class AdvancedMT5TradingMonitorGUI:
             # 1. Confirm EMA (CRITICAL for crossover detection)
             ema_confirm = indicators.get('ema_confirm', 'N/A')
             if isinstance(ema_confirm, (int, float)):
-                display_text += f"Confirm EMA (1):     {ema_confirm:.5f}  ← Crossover Signal\n"
+                display_text += f"Confirm EMA (1):     {ema_confirm:.{digits}f}  ← Crossover Signal\n"
             else:
                 display_text += f"Confirm EMA (1):     {ema_confirm}  ← Crossover Signal\n"
             
             # 2. Fast EMA
             ema_fast = indicators.get('ema_fast', 'N/A')
             if isinstance(ema_fast, (int, float)):
-                display_text += f"Fast EMA ({indicators.get('ema_fast_period', '?')}):       {ema_fast:.5f}\n"
+                display_text += f"Fast EMA ({indicators.get('ema_fast_period', '?')}):       {ema_fast:.{digits}f}\n"
             else:
                 display_text += f"Fast EMA ({indicators.get('ema_fast_period', '?')}):       {ema_fast}\n"
             
             # 3. Medium EMA
             ema_medium = indicators.get('ema_medium', 'N/A')
             if isinstance(ema_medium, (int, float)):
-                display_text += f"Medium EMA ({indicators.get('ema_medium_period', '?')}):     {ema_medium:.5f}\n"
+                display_text += f"Medium EMA ({indicators.get('ema_medium_period', '?')}):     {ema_medium:.{digits}f}\n"
             else:
                 display_text += f"Medium EMA ({indicators.get('ema_medium_period', '?')}):     {ema_medium}\n"
             
             # 4. Slow EMA
             ema_slow = indicators.get('ema_slow', 'N/A')
             if isinstance(ema_slow, (int, float)):
-                display_text += f"Slow EMA ({indicators.get('ema_slow_period', '?')}):       {ema_slow:.5f}\n"
+                display_text += f"Slow EMA ({indicators.get('ema_slow_period', '?')}):       {ema_slow:.{digits}f}\n"
             else:
                 display_text += f"Slow EMA ({indicators.get('ema_slow_period', '?')}):       {ema_slow}\n"
             
             # 5. Filter EMA (trend filter)
             ema_filter = indicators.get('ema_filter', 'N/A')
             if isinstance(ema_filter, (int, float)):
-                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter:.5f}  ← Trend Filter\n\n"
+                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter:.{digits}f}  ← Trend Filter\n\n"
             else:
                 display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter}  ← Trend Filter\n\n"
             
@@ -1468,19 +1708,19 @@ class AdvancedMT5TradingMonitorGUI:
             # Safe formatting for ATR and levels
             atr = indicators.get('atr', 'N/A')
             if isinstance(atr, (int, float)):
-                display_text += f"ATR ({indicators.get('atr_period', '?')}): {atr:.6f}\n"
+                display_text += f"ATR ({indicators.get('atr_period', '?')}): {atr:.{digits+1}f}\n"  # ATR with extra digit for precision
             else:
                 display_text += f"ATR ({indicators.get('atr_period', '?')}): {atr}\n"
                 
             sl_level = indicators.get('sl_level', 'N/A')
             if isinstance(sl_level, (int, float)):
-                display_text += f"Stop Loss Level: {sl_level:.5f} (ATR × {indicators.get('sl_multiplier', '?')})\n"
+                display_text += f"Stop Loss Level: {sl_level:.{digits}f} (ATR × {indicators.get('sl_multiplier', '?')})\n"
             else:
                 display_text += f"Stop Loss Level: {sl_level} (ATR × {indicators.get('sl_multiplier', '?')})\n"
                 
             tp_level = indicators.get('tp_level', 'N/A')
             if isinstance(tp_level, (int, float)):
-                display_text += f"Take Profit Level: {tp_level:.5f} (ATR × {indicators.get('tp_multiplier', '?')})\n"
+                display_text += f"Take Profit Level: {tp_level:.{digits}f} (ATR × {indicators.get('tp_multiplier', '?')})\n"
             else:
                 display_text += f"Take Profit Level: {tp_level} (ATR × {indicators.get('tp_multiplier', '?')})\n"
                 
@@ -1580,13 +1820,14 @@ class AdvancedMT5TradingMonitorGUI:
                 # Show breakout levels (top/bottom limits)
                 window_top = state.get('window_top_limit')
                 window_bottom = state.get('window_bottom_limit')
+                digits = state.get('digits', 5)  # Get symbol precision
                 
                 if armed_direction == 'LONG':
                     # LONG breakout = price breaks above top limit
-                    breakout_str = f"{window_top:.5f}" if window_top else "None"
+                    breakout_str = f"{window_top:.{digits}f}" if window_top else "None"
                 else:
                     # SHORT breakout = price breaks below bottom limit
-                    breakout_str = f"{window_bottom:.5f}" if window_bottom else "None"
+                    breakout_str = f"{window_bottom:.{digits}f}" if window_bottom else "None"
                     
                 values = (
                     symbol,
@@ -1619,9 +1860,12 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Convert time to local timezone (fix +1 hour issue)
             df_local = df.copy()
-            df_local['time'] = pd.to_datetime(df['time'])
-            # Adjust for timezone offset (subtract 1 hour to correct the display)
-            df_local['time'] = df_local['time'] - timedelta(hours=1)
+            if pd is not None:
+                df_local['time'] = pd.to_datetime(df['time'])  # type: ignore
+                # Adjust for timezone offset (subtract 1 hour to correct the display)
+                df_local['time'] = df_local['time'] - timedelta(hours=1)
+            else:
+                return
             
             # Create candlestick chart
             self.plot_candlesticks(self.ax, df_local)
@@ -1637,39 +1881,54 @@ class AdvancedMT5TradingMonitorGUI:
             filter_period = self.extract_numeric_value(config.get('ema_filter_price_length', config.get('Price Filter EMA Period', '100')))
             
             # Plot ALL EMAs with asset-specific periods
+            # ✅ CRITICAL: Use adjust=False to match MT5 EMA calculation
+            # ✅ CRITICAL: Only plot from point where EMA stabilizes (3x period minimum)
+            
             # 1. Confirm EMA (most important for crossovers)
-            if len(df_local) >= confirm_period:
-                ema_confirm = df_local['close'].ewm(span=confirm_period).mean()
-                self.ax.plot(df_local['time'], ema_confirm, label=f'EMA Confirm ({int(confirm_period)})', 
+            min_bars_confirm = int(confirm_period * 3)  # Need 3x period to stabilize
+            if len(df_local) >= min_bars_confirm:
+                ema_confirm = df_local['close'].ewm(span=confirm_period, adjust=False).mean()
+                # Only plot from stabilization point
+                self.ax.plot(df_local['time'].iloc[min_bars_confirm:], 
+                           ema_confirm.iloc[min_bars_confirm:], 
+                           label=f'EMA Confirm ({int(confirm_period)})', 
                            color='cyan', alpha=0.9, linewidth=2, linestyle='-')
             
             # 2. Fast EMA
-            if len(df_local) >= fast_period:
-                ema_fast = df_local['close'].ewm(span=fast_period).mean()
-                self.ax.plot(df_local['time'], ema_fast, label=f'EMA Fast ({int(fast_period)})', 
+            min_bars_fast = int(fast_period * 3)
+            if len(df_local) >= min_bars_fast:
+                ema_fast = df_local['close'].ewm(span=fast_period, adjust=False).mean()
+                self.ax.plot(df_local['time'].iloc[min_bars_fast:], 
+                           ema_fast.iloc[min_bars_fast:], 
+                           label=f'EMA Fast ({int(fast_period)})', 
                            color='red', alpha=0.8, linewidth=1.5)
             
             # 3. Medium EMA
-            if len(df_local) >= medium_period:
-                ema_medium = df_local['close'].ewm(span=medium_period).mean()
-                self.ax.plot(df_local['time'], ema_medium, label=f'EMA Medium ({int(medium_period)})', 
+            min_bars_medium = int(medium_period * 3)
+            if len(df_local) >= min_bars_medium:
+                ema_medium = df_local['close'].ewm(span=medium_period, adjust=False).mean()
+                self.ax.plot(df_local['time'].iloc[min_bars_medium:], 
+                           ema_medium.iloc[min_bars_medium:], 
+                           label=f'EMA Medium ({int(medium_period)})', 
                            color='orange', alpha=0.8, linewidth=1.5)
             
             # 4. Slow EMA
-            if len(df_local) >= slow_period:
-                ema_slow = df_local['close'].ewm(span=slow_period).mean()
-                self.ax.plot(df_local['time'], ema_slow, label=f'EMA Slow ({int(slow_period)})', 
+            min_bars_slow = int(slow_period * 3)
+            if len(df_local) >= min_bars_slow:
+                ema_slow = df_local['close'].ewm(span=slow_period, adjust=False).mean()
+                self.ax.plot(df_local['time'].iloc[min_bars_slow:], 
+                           ema_slow.iloc[min_bars_slow:], 
+                           label=f'EMA Slow ({int(slow_period)})', 
                            color='green', alpha=0.8, linewidth=1.5)
             
-            # 5. Filter EMA (trend filter) - ALWAYS plot, EWM handles insufficient data
-            # Reduced minimum requirement to show Filter EMA even with less data
-            if len(df_local) >= min(20, filter_period):  # Minimum 20 bars or filter_period
-                ema_filter = df_local['close'].ewm(span=filter_period, min_periods=1).mean()
-                self.ax.plot(df_local['time'], ema_filter, label=f'EMA Filter ({int(filter_period)})', 
+            # 5. Filter EMA (trend filter)
+            min_bars_filter = int(filter_period * 3)  # EMA(70) needs ~210 bars
+            if len(df_local) >= min_bars_filter:
+                ema_filter = df_local['close'].ewm(span=filter_period, adjust=False).mean()
+                self.ax.plot(df_local['time'].iloc[min_bars_filter:], 
+                           ema_filter.iloc[min_bars_filter:], 
+                           label=f'EMA Filter ({int(filter_period)})', 
                            color='purple', alpha=0.7, linewidth=1.5, linestyle='-')
-                # Debug: print to confirm Filter EMA is plotted
-                if self.p.print_signals if hasattr(self, 'p') else False:
-                    print(f"DEBUG: Filter EMA ({int(filter_period)}) plotted for {symbol} with {len(df_local)} bars")
             
             # Mark current phase
             state = self.strategy_states[symbol]
@@ -1765,7 +2024,8 @@ class AdvancedMT5TradingMonitorGUI:
             self.ax.grid(True, alpha=0.3)
             
             # Format time axis
-            self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            if mdates is not None:
+                self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))  # type: ignore
             self.ax.tick_params(axis='x', rotation=45, labelsize=8)
             
             # Set reasonable y-axis limits
@@ -1805,35 +2065,26 @@ class AdvancedMT5TradingMonitorGUI:
                 body_height = abs(close_price - open_price)
                 body_bottom = min(open_price, close_price)
                 
-                # Calculate candle width (time-based)
+                # Calculate candle width (time-based) - convert to matplotlib numeric format
                 if len(df) > 1:
-                    time_diff = (df['time'].iloc[1] - df['time'].iloc[0]).total_seconds() / 3600  # hours
-                    candle_width = timedelta(hours=time_diff * 0.8)  # 80% of time interval
+                    time_diff = (df['time'].iloc[1] - df['time'].iloc[0]).total_seconds() / 86400  # days for matplotlib
+                    candle_width_days = float(time_diff * 0.8)  # 80% of time interval
                 else:
-                    candle_width = timedelta(minutes=4)  # 4 minutes for 5-minute bars
+                    candle_width_days = 4.0 / (60.0 * 24.0)  # 4 minutes converted to days
                 
                 # Create rectangle for candle body
-                rect = Rectangle((time_point - candle_width/2, body_bottom), 
-                               candle_width, body_height,
-                               facecolor=color, edgecolor=edge_color, 
-                               alpha=0.8, linewidth=0.5)
-                ax.add_patch(rect)
+                # matplotlib expects width in data coordinates (days for dates)
+                if Rectangle is not None and mdates is not None:
+                    time_num = float(mdates.date2num(time_point))  # type: ignore
+                    rect = Rectangle((time_num - candle_width_days/2.0, float(body_bottom)), 
+                                   candle_width_days, float(body_height),
+                                   facecolor=color, edgecolor=edge_color, 
+                                   alpha=0.8, linewidth=0.5)
+                    ax.add_patch(rect)
                 
         except Exception as e:
             # Fallback to line plot if candlestick fails
             ax.plot(df['time'], df['close'], label='Price', color='blue', linewidth=1)
-            
-    def process_phase_updates(self):
-        """Process phase updates from the monitoring thread"""
-        try:
-            while not self.phase_update_queue.empty():
-                update = self.phase_update_queue.get_nowait()
-                # Process update
-                
-        except queue.Empty:
-            pass
-        except Exception as e:
-            self.terminal_log(f"❌ Phase update error: {str(e)}", "ERROR")
             
     def process_phase_updates(self):
         """Process phase updates from the monitoring thread"""
@@ -1907,14 +2158,57 @@ class AdvancedMT5TradingMonitorGUI:
         except Exception as e:
             self.terminal_log(f"❌ Phase summary error: {str(e)}", "ERROR")
         
+    def log_hourly_summary(self):
+        """Log hourly activity summary to reduce terminal clutter"""
+        now = datetime.now()
+        if (now - self.last_hourly_summary).total_seconds() >= 3600:  # Every hour
+            # ✅ SET RECURSION GUARD: Prevent terminal_log from calling this again
+            self._in_hourly_summary = True
+            try:
+                self.terminal_log("=" * 70, "INFO", critical=True)
+                self.terminal_log(f"📊 HOURLY SUMMARY ({now.strftime('%H:%M')})", "SUCCESS", critical=True)
+                self.terminal_log(f"   🔄 Crossovers: {self.hourly_events['crossovers']} | 🎯 Armed: {self.hourly_events['armed_transitions']} | 📉 Pullbacks: {self.hourly_events['pullbacks_detected']}", "INFO", critical=True)
+                self.terminal_log(f"   🪟 Windows: {self.hourly_events['windows_opened']} | 🚀 Breakouts: {self.hourly_events['breakouts']} | ⚠️ Invalidations: {self.hourly_events['invalidations']} | 💰 Trades: {self.hourly_events['trades_executed']}", "INFO", critical=True)
+                self.terminal_log("=" * 70, "INFO", critical=True)
+                
+                # Reset counters
+                for key in self.hourly_events:
+                    self.hourly_events[key] = 0
+                self.last_hourly_summary = now
+            finally:
+                # ✅ CLEAR RECURSION GUARD: Always clear, even if error occurs
+                self._in_hourly_summary = False
+    
     def terminal_log(self, message, level="NORMAL", critical=False):
         """Add message to terminal display - only critical events by default"""
+        
+        # ✅ RECURSION GUARD: Prevent infinite loop during hourly summary
+        if not getattr(self, '_in_hourly_summary', False):
+            # Track events for hourly summary
+            if "CROSSED ABOVE" in message or "CROSSED BELOW" in message:
+                self.hourly_events['crossovers'] += 1
+            elif "CROSSOVER - State: SCANNING → ARMED" in message:
+                self.hourly_events['armed_transitions'] += 1
+            elif "Pullback CONFIRMED" in message:
+                self.hourly_events['pullbacks_detected'] += 1
+            elif "Window OPENING" in message:
+                self.hourly_events['windows_opened'] += 1
+            elif "BREAKOUT detected" in message:
+                self.hourly_events['breakouts'] += 1
+            elif "GLOBAL INVALIDATION" in message or "Non-pullback candle detected" in message:
+                self.hourly_events['invalidations'] += 1
+            elif "TRADE EXECUTED" in message or "ORDER FILLED" in message:
+                self.hourly_events['trades_executed'] += 1
+            
+            # Check if it's time for hourly summary (but not if already in summary)
+            self.log_hourly_summary()
         
         # Define critical keywords that should always be displayed
         critical_keywords = [
             "CROSSOVER", "CROSS ABOVE", "CROSS BELOW", "CROSSED",  # EMA crossovers
             "PHASE CHANGE", "WAITING_PULLBACK", "WAITING_BREAKOUT",  # Phase changes
             "ENTRY", "EXIT", "BREAKOUT DETECTED", "SIGNAL",  # Trading signals
+            "TRADE EXECUTED", "ORDER FILLED", "POSITION OPENED",  # Trade execution
             "ERROR", "⚠️", "❌", "🎯", "🟢", "🔴", "🔄"  # Errors and alerts
         ]
         
@@ -2032,7 +2326,7 @@ class AdvancedMT5TradingMonitorGUI:
     def disconnect_mt5(self):
         """Disconnect from MT5"""
         if mt5:
-            mt5.shutdown()
+            mt5.shutdown()  # type: ignore
         self.mt5_connected = False
         self.connection_status_label.config(text="Disconnected", foreground="red")
         self.connect_button.config(text="Connect")

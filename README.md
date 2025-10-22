@@ -157,9 +157,10 @@ mt5_live_trading_bot/
 │   └── deep_stress_test.py
 │
 ├── docs/                          # Documentation
-│   ├── TICK_VS_CANDLE_TIMING_FIX.md
-│   ├── GLOBAL_INVALIDATION_FIX.md
-│   └── [other technical docs]
+│   ├── README.md                  # Documentation index
+│   ├── PULLBACK_FIX_SUMMARY.md
+│   ├── EMA_STABILITY_FIX_CRITICAL.md
+│   └── [other current docs + archive/]
 │
 └── logs/                          # Application logs (gitignored)
 ```
@@ -251,11 +252,17 @@ Each strategy in `strategies/` folder contains:
 
 ## 📚 Documentation
 
-Detailed technical documentation available in `docs/` folder:
-- **TICK_VS_CANDLE_TIMING_FIX.md** - Candle-based signal processing
-- **GLOBAL_INVALIDATION_FIX.md** - Strategy reset logic
-- **STATE_MACHINE_REWRITE_COMPLETE.md** - State machine architecture
-- Additional development and fix documentation
+Comprehensive documentation available in the `docs/` folder:
+
+- **[docs/README.md](docs/README.md)** - Complete documentation index and navigation
+- **[START_TESTING_HERE.md](docs/START_TESTING_HERE.md)** - Quick start guide for testing
+- **[PULLBACK_FIX_SUMMARY.md](docs/PULLBACK_FIX_SUMMARY.md)** - Critical bug fixes (October 2025)
+- **[EMA_STABILITY_FIX_CRITICAL.md](docs/EMA_STABILITY_FIX_CRITICAL.md)** - EMA calculation improvements
+- **[ENHANCED_PULLBACK_LOGGING.md](docs/ENHANCED_PULLBACK_LOGGING.md)** - Export-ready logging system
+- **Setup Guides** - MT5 configuration and EMA alignment (see docs/)
+- **Contributing Guidelines** - Development and contribution standards
+
+**Note:** Historical and intermediate documentation preserved in `docs/archive/` for reference.
 
 ## 🤝 Contributing
 

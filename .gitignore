@@ -202,3 +202,5 @@ optimization_results/
 # - Use template files for sharing configuration structure
 # - Keep sensitive data in local files only
 # - Review commits carefully before pushing
+# Archived documentation
+docs/archive/
