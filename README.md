@@ -105,7 +105,7 @@ python launch_advanced_monitor_v2.py
 
 ## 🧪 Testing
 
-### Run Component Tests
+### Component Tests
 ```bash
 cd testing
 python test_setup.py              # Verify installation
@@ -114,12 +114,23 @@ python test_signal_detection.py   # Test strategy signals
 python deep_stress_test.py        # Comprehensive stress test
 ```
 
+### Order Execution Tests
+```bash
+cd testing
+python test_mt5_order.py          # Test basic order execution
+python test_real_entry.py         # Simulate real bot entry with ATR/SL/TP
+```
+
+**⚠️ Warning:** Order execution tests place REAL orders on your MT5 account. Use demo accounts for testing!
+
 ### Expected Test Results
 - ✅ MT5 connection successful
 - ✅ All 6 strategies loaded correctly
 - ✅ GUI components initialized
 - ✅ Chart rendering functional
 - ✅ EMA calculations accurate
+- ✅ Order filling mode detection working
+- ✅ ATR-based SL/TP calculation correct
 
 ## 📁 Project Structure
 
@@ -151,10 +162,12 @@ mt5_live_trading_bot/
 │   └── __init__.py
 │
 ├── testing/                       # Test suite
-│   ├── test_setup.py
-│   ├── test_monitor_components.py
-│   ├── test_signal_detection.py
-│   └── deep_stress_test.py
+│   ├── test_setup.py              # Installation verification
+│   ├── test_monitor_components.py # GUI component tests
+│   ├── test_signal_detection.py   # Strategy signal tests
+│   ├── deep_stress_test.py        # Stress testing
+│   ├── test_mt5_order.py          # Order execution test
+│   └── test_real_entry.py         # Real entry simulation
 │
 ├── docs/                          # Documentation
 │   ├── README.md                  # Documentation index

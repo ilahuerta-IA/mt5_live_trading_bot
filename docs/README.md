@@ -1,6 +1,6 @@
 # MT5 Live Trading Bot - Documentation
 
-**Last Updated:** October 22, 2025
+**Last Updated:** October 24, 2025
 
 ## 📚 Current Documentation
 
@@ -26,6 +26,9 @@ This folder contains the **essential documentation** for the MT5 Live Trading Bo
 - **[EMA_STABILITY_FIX_CRITICAL.md](EMA_STABILITY_FIX_CRITICAL.md)** - 500 bars + adjust=False fix
 - **[EMA_CHART_VISUALIZATION_FIX.md](EMA_CHART_VISUALIZATION_FIX.md)** - Chart stabilization periods
 - **[EMA_DISPLAY_PRECISION_FIX.md](EMA_DISPLAY_PRECISION_FIX.md)** - Dynamic symbol precision
+
+### Window & Performance Fixes (October 24, 2025)
+- **[CRITICAL_FIXES_OCT24_2025.md](CRITICAL_FIXES_OCT24_2025.md)** - Window expiry, chart refresh, and order filling mode fixes
 
 ### Other Improvements
 - **[TIME_FILTER_AND_CHART_IMPROVEMENTS.md](TIME_FILTER_AND_CHART_IMPROVEMENTS.md)** - Backtrader compliance + Plotly-style navigation
