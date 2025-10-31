@@ -17,6 +17,7 @@ import logging
 from typing import Dict, List, Optional, Any, Tuple
 import importlib.util
 import queue
+import math
 
 # Try to import charting libraries
 try:
@@ -921,6 +922,337 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"❌ {symbol} monitoring error: {str(e)}", "ERROR")
+    
+    # ===================================================================
+    # FILTER VALIDATION FUNCTIONS - Universal for all assets
+    # ===================================================================
+    
+    def _validate_atr_filter(self, symbol, df, direction='LONG'):
+        """Validate ATR volatility filter - UNIVERSAL for all assets
+        
+        Checks:
+        1. ATR range (min/max thresholds)
+        2. ATR increment filter (positive changes)
+        3. ATR decrement filter (negative changes)
+        
+        Returns:
+            bool: True if ATR passes all filters (or filter disabled), False otherwise
+        """
+        if df is None or len(df) < 2 or 'atr' not in df.columns:
+            return True  # Cannot validate, allow to pass
+        
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if ATR filter enabled
+            filter_key = f'{direction}_USE_ATR_FILTER'
+            filter_enabled = config.get(filter_key, 'False')
+            
+            if filter_enabled not in ('True', True, 1, '1'):
+                return True  # Filter disabled
+            
+            # Get current ATR
+            current_atr = df['atr'].iloc[-1]
+            if pd.isna(current_atr) or current_atr <= 0:
+                return False  # Invalid ATR
+            
+            # Check ATR range
+            min_key = f'{direction}_ATR_MIN_THRESHOLD'
+            max_key = f'{direction}_ATR_MAX_THRESHOLD'
+            min_atr = float(config.get(min_key, 0.0))
+            max_atr = float(config.get(max_key, 999.0))
+            
+            if current_atr < min_atr or current_atr > max_atr:
+                self.terminal_log(
+                    f"❌ {symbol} {direction}: ATR {current_atr:.6f} outside range [{min_atr:.6f}, {max_atr:.6f}]", 
+                    "WARNING", critical=True
+                )
+                return False
+            
+            # Check ATR increment/decrement filters
+            if len(df) >= 2:
+                prev_atr = df['atr'].iloc[-2]
+                if not pd.isna(prev_atr) and prev_atr > 0:
+                    atr_change = current_atr - prev_atr
+                    
+                    # Increment filter (positive changes)
+                    incr_key = f'{direction}_USE_ATR_INCREMENT_FILTER'
+                    if config.get(incr_key, 'False') in ('True', True) and atr_change >= 0:
+                        min_incr = float(config.get(f'{direction}_ATR_INCREMENT_MIN_THRESHOLD', 0.0))
+                        max_incr = float(config.get(f'{direction}_ATR_INCREMENT_MAX_THRESHOLD', 999.0))
+                        
+                        if atr_change < min_incr or atr_change > max_incr:
+                            self.terminal_log(
+                                f"❌ {symbol} {direction}: ATR increment {atr_change:+.6f} outside range [{min_incr:.6f}, {max_incr:.6f}]", 
+                                "WARNING", critical=True
+                            )
+                            return False
+                    
+                    # Decrement filter (negative changes)
+                    decr_key = f'{direction}_USE_ATR_DECREMENT_FILTER'
+                    if config.get(decr_key, 'False') in ('True', True) and atr_change < 0:
+                        min_decr = float(config.get(f'{direction}_ATR_DECREMENT_MIN_THRESHOLD', -999.0))
+                        max_decr = float(config.get(f'{direction}_ATR_DECREMENT_MAX_THRESHOLD', 0.0))
+                        
+                        if atr_change < min_decr or atr_change > max_decr:
+                            self.terminal_log(
+                                f"❌ {symbol} {direction}: ATR decrement {atr_change:+.6f} outside range [{min_decr:.6f}, {max_decr:.6f}]", 
+                                "WARNING", critical=True
+                            )
+                            return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: ATR filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
+    
+    def _validate_angle_filter(self, symbol, df, direction='LONG'):
+        """Validate EMA angle filter - UNIVERSAL for all assets
+        
+        Calculates EMA slope angle and checks against min/max thresholds.
+        Uses asset-specific scale factor (10.0 for metals, 10000.0 for forex).
+        
+        Returns:
+            bool: True if angle passes filter (or filter disabled), False otherwise
+        """
+        if df is None or len(df) < 5:
+            return True  # Not enough data, allow to pass
+        
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if angle filter enabled
+            filter_key = f'{direction}_USE_ANGLE_FILTER'
+            if config.get(filter_key, 'False') not in ('True', True):
+                return True  # Filter disabled
+            
+            # Calculate EMA confirm (1-period = close price)
+            confirm_period = 1
+            ema_confirm_series = df['close'].ewm(span=confirm_period, adjust=False).mean()
+            
+            if len(ema_confirm_series) < 4:
+                return True  # Not enough data
+            
+            # Get scale factor (asset-specific)
+            scale_factor = float(config.get(f'{direction}_ANGLE_SCALE_FACTOR', 10000.0))
+            
+            # Calculate angle over 1 bar (matching Backtrader original)
+            # Original: (ema_confirm[0] - ema_confirm[-1]) * scale_factor
+            current = ema_confirm_series.iloc[-1]
+            previous = ema_confirm_series.iloc[-2]  # Fixed: was -4 (lookback=3), now -2 (1 bar back)
+            
+            rise = (current - previous) * scale_factor  # Fixed: removed division by lookback
+            angle = math.atan(rise) * (180.0 / math.pi)  # rise/run where run=1
+            
+            # Get angle thresholds
+            min_angle = float(config.get(f'{direction}_MIN_ANGLE', -999.0))
+            max_angle = float(config.get(f'{direction}_MAX_ANGLE', 999.0))
+            
+            # Check range
+            if angle < min_angle or angle > max_angle:
+                self.terminal_log(
+                    f"❌ {symbol} {direction}: Angle {angle:.1f}° outside range [{min_angle:.1f}°, {max_angle:.1f}°]", 
+                    "WARNING", critical=True
+                )
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: Angle filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
+    
+    def _validate_price_filter(self, symbol, df, direction='LONG'):
+        """Validate price vs filter EMA - UNIVERSAL for all assets
+        
+        Checks if current price is on the correct side of filter EMA.
+        LONG: close > filter_EMA (uptrend)
+        SHORT: close < filter_EMA (downtrend)
+        
+        Returns:
+            bool: True if price passes filter (or filter disabled), False otherwise
+        """
+        if df is None or len(df) < 2:
+            return True  # Not enough data, allow to pass
+        
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if price filter enabled
+            filter_key = f'{direction}_USE_PRICE_FILTER_EMA'
+            if config.get(filter_key, 'False') not in ('True', True):
+                return True  # Filter disabled
+            
+            # Get filter EMA period
+            filter_period = self.extract_numeric_value(
+                config.get('ema_filter_price_length', 
+                          config.get('Price Filter EMA Period', '70'))
+            )
+            
+            # Calculate filter EMA
+            if len(df) < filter_period:
+                return True  # Not enough data for filter EMA
+            
+            filter_ema = df['close'].ewm(span=filter_period, adjust=False).mean().iloc[-1]
+            current_close = df['close'].iloc[-1]
+            
+            # Validate based on direction
+            if direction == 'LONG':
+                if current_close <= filter_ema:
+                    self.terminal_log(
+                        f"❌ {symbol} LONG: Price {current_close:.5f} <= Filter EMA({filter_period}) {filter_ema:.5f}", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            elif direction == 'SHORT':
+                if current_close >= filter_ema:
+                    self.terminal_log(
+                        f"❌ {symbol} SHORT: Price {current_close:.5f} >= Filter EMA({filter_period}) {filter_ema:.5f}", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: Price filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
+    
+    def _validate_candle_direction(self, symbol, df, direction='LONG'):
+        """Validate previous candle direction - UNIVERSAL for all assets
+        
+        Checks if previous closed candle matches required direction.
+        LONG: previous candle must be bullish (close > open)
+        SHORT: previous candle must be bearish (close < open)
+        
+        Returns:
+            bool: True if candle passes filter (or filter disabled), False otherwise
+        """
+        if df is None or len(df) < 1:
+            return True  # Not enough data, allow to pass
+        
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if candle direction filter enabled
+            filter_key = f'{direction}_USE_CANDLE_DIRECTION_FILTER'
+            if config.get(filter_key, 'False') not in ('True', True):
+                return True  # Filter disabled
+            
+            # Get previous candle (last closed candle)
+            prev_close = df['close'].iloc[-1]
+            prev_open = df['open'].iloc[-1]
+            
+            # Validate based on direction
+            if direction == 'LONG':
+                if prev_close <= prev_open:
+                    self.terminal_log(
+                        f"❌ {symbol} LONG: Previous candle not bullish (C:{prev_close:.5f} <= O:{prev_open:.5f})", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            elif direction == 'SHORT':
+                if prev_close >= prev_open:
+                    self.terminal_log(
+                        f"❌ {symbol} SHORT: Previous candle not bearish (C:{prev_close:.5f} >= O:{prev_open:.5f})", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: Candle direction filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
+    
+    def _validate_ema_ordering(self, symbol, ema_confirm, ema_fast, ema_medium, ema_slow, direction='LONG'):
+        """Validate EMA ordering - UNIVERSAL for all assets
+        
+        Checks if EMAs are in proper order.
+        LONG: confirm > fast > medium > slow (all EMAs ascending)
+        SHORT: confirm < fast < medium < slow (all EMAs descending)
+        
+        Returns:
+            bool: True if ordering passes filter (or filter disabled), False otherwise
+        """
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if EMA ordering filter enabled
+            filter_key = f'{direction}_USE_EMA_ORDER_CONDITION'
+            if config.get(filter_key, 'False') not in ('True', True):
+                return True  # Filter disabled
+            
+            # Validate based on direction
+            if direction == 'LONG':
+                if not (ema_confirm > ema_fast and ema_fast > ema_medium and ema_medium > ema_slow):
+                    self.terminal_log(
+                        f"❌ {symbol} LONG: EMA ordering failed (not confirm > fast > medium > slow)", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            elif direction == 'SHORT':
+                if not (ema_confirm < ema_fast and ema_fast < ema_medium and ema_medium < ema_slow):
+                    self.terminal_log(
+                        f"❌ {symbol} SHORT: EMA ordering failed (not confirm < fast < medium < slow)", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: EMA ordering filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
+    
+    def _validate_time_filter(self, symbol, current_dt, direction='LONG'):
+        """Validate trading time window - UNIVERSAL for all assets
+        
+        Checks if current time falls within allowed trading hours.
+        Handles overnight windows (e.g., 23:00-16:00 UTC).
+        
+        Returns:
+            bool: True if time passes filter (or filter disabled), False otherwise
+        """
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if time filter enabled
+            if config.get('USE_TIME_RANGE_FILTER', 'False') not in ('True', True):
+                return True  # Filter disabled
+            
+            # Get time range
+            start_hour = int(config.get('ENTRY_START_HOUR', 0))
+            start_min = int(config.get('ENTRY_START_MINUTE', 0))
+            end_hour = int(config.get('ENTRY_END_HOUR', 23))
+            end_min = int(config.get('ENTRY_END_MINUTE', 59))
+            
+            # Convert to minutes since midnight
+            current_minutes = current_dt.hour * 60 + current_dt.minute
+            start_minutes = start_hour * 60 + start_min
+            end_minutes = end_hour * 60 + end_min
+            
+            # Handle overnight windows (e.g., 23:00-16:00)
+            if start_minutes > end_minutes:
+                # Overnight: valid if AFTER start OR BEFORE end
+                in_range = current_minutes >= start_minutes or current_minutes <= end_minutes
+            else:
+                # Same day: valid if BETWEEN start AND end
+                in_range = start_minutes <= current_minutes <= end_minutes
+            
+            if not in_range:
+                self.terminal_log(
+                    f"❌ {symbol} {direction}: Time {current_dt.hour:02d}:{current_dt.minute:02d} outside trading hours [{start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d} UTC]", 
+                    "WARNING", critical=True
+                )
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: Time filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
             
     def detect_ema_crossovers(self, symbol, indicators, df):
         """Detect EMA crossovers ONLY ON CLOSED CANDLES (matching Backtrader behavior)
@@ -1085,6 +1417,79 @@ class AdvancedMT5TradingMonitorGUI:
                 
                 self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW {'/'.join(ema_names)} EMA - BEARISH! (Candle: {current_closed_candle_time})", 
                                 "ERROR", critical=True)
+            
+            # ===================================================================
+            # CRITICAL: VALIDATE ALL FILTERS BEFORE STORING CROSSOVER
+            # ===================================================================
+            
+            # Get current datetime for time filter
+            if len(df_closed) > 0:
+                current_dt = df_closed['time'].iloc[-1] if isinstance(df_closed['time'].iloc[-1], datetime) else datetime.now()
+            else:
+                current_dt = datetime.now()
+            
+            # ⚠️ CRITICAL FIX: Add ATR to df_closed for filter validation
+            # The indicators dict has ATR but df_closed doesn't have it as a column
+            if indicators and 'atr' in indicators and len(df_closed) > 0:
+                df_closed = df_closed.copy()  # Avoid modifying original
+                df_closed['atr'] = indicators['atr']  # Add as scalar (broadcasts to all rows)
+            
+            # Validate BULLISH crossovers (LONG direction)
+            if bullish_crossover and not crossover_is_stale:
+                self.terminal_log(f"🔍 {symbol}: Bullish crossover detected - validating ALL filters...", 
+                                "INFO", critical=True)
+                
+                # 1. ATR Filter
+                if not self._validate_atr_filter(symbol, df_closed, 'LONG'):
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by ATR filter", 
+                                    "WARNING", critical=True)
+                
+                # 2. Angle Filter (if passed ATR)
+                elif not self._validate_angle_filter(symbol, df_closed, 'LONG'):
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Angle filter", 
+                                    "WARNING", critical=True)
+                
+                # 3. Price Filter (if passed angle)
+                elif not self._validate_price_filter(symbol, df_closed, 'LONG'):
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Price filter", 
+                                    "WARNING", critical=True)
+                
+                # 4. Candle Direction (if passed price)
+                elif not self._validate_candle_direction(symbol, df_closed, 'LONG'):
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Candle Direction filter", 
+                                    "WARNING", critical=True)
+                
+                # 5. EMA Ordering (if passed candle)
+                elif not self._validate_ema_ordering(symbol, confirm_ema, fast_ema, medium_ema, slow_ema, 'LONG'):
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by EMA Ordering filter", 
+                                    "WARNING", critical=True)
+                
+                # 6. Time Filter (if passed EMA ordering)
+                elif not self._validate_time_filter(symbol, current_dt, 'LONG'):
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Time filter", 
+                                    "WARNING", critical=True)
+                
+                else:
+                    # ALL FILTERS PASSED!
+                    self.terminal_log(f"✅ {symbol}: LONG crossover PASSED ALL FILTERS - Ready to ARM", 
+                                    "SUCCESS", critical=True)
+            
+            # ===================================================================
+            # CRITICAL: BEARISH CROSSOVER HANDLING
+            # ===================================================================
+            # ⚠️ IMPORTANT: We preserve bearish_crossover for GLOBAL INVALIDATION
+            # (to reset ARMED_LONG states) but log that SHORTS are disabled
+            if bearish_crossover:
+                self.terminal_log(f"⚠️ {symbol}: Bearish crossover detected - Will trigger GLOBAL INVALIDATION if ARMED_LONG", 
+                                "INFO", critical=True)
+                # Note: Do NOT set bearish_crossover = False here!
+                # The state machine needs it to reset ARMED_LONG states
             
             # Store crossover data for phase logic
             if symbol in self.strategy_states:
@@ -1342,7 +1747,7 @@ class AdvancedMT5TradingMonitorGUI:
         last_high = state['last_pullback_candle_high']
         last_low = state['last_pullback_candle_low']
         candle_range = last_high - last_low
-        price_offset_multiplier = float(config.get('WINDOW_PRICE_OFFSET_MULTIPLIER', 0.5))
+        price_offset_multiplier = float(config.get('WINDOW_PRICE_OFFSET_MULTIPLIER', 0.001))  # Fixed: was 0.5, should be 0.001
         price_offset = candle_range * price_offset_multiplier
         
         state['window_top_limit'] = last_high + price_offset
@@ -1464,6 +1869,19 @@ class AdvancedMT5TradingMonitorGUI:
         current_state = self.strategy_states[symbol]
         entry_state = current_state['entry_state']
         config = self.strategy_configs.get(symbol, {})
+        
+        # ===================================================================
+        # EMERGENCY SAFEGUARD: Force disable SHORT arming (all assets LONG only)
+        # ===================================================================
+        if entry_state == 'ARMED_SHORT':
+            self.terminal_log(f"🚨 {symbol}: EMERGENCY RESET - ARMED_SHORT detected but SHORTS DISABLED globally!", 
+                            "ERROR", critical=True)
+            self._reset_entry_state(symbol)
+            entry_state = 'SCANNING'
+            current_state['entry_state'] = 'SCANNING'
+            # Clear any bearish crossover data
+            if 'crossover_data' in current_state:
+                current_state['crossover_data']['bearish_crossover'] = False
         
         # ✅ CRITICAL FIX: Check for open positions BEFORE any processing
         # If position exists and we're in IN_TRADE state, check if it's still open
