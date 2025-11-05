@@ -76,6 +76,35 @@ if not sunrise_signal_adapter:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
     sunrise_signal_adapter = dynamic_import("sunrise_signal_adapter")
 
+# ═══════════════════════════════════════════════════════════════════
+# RAY DALIO ALL-WEATHER PORTFOLIO ALLOCATION SYSTEM
+# ═══════════════════════════════════════════════════════════════════
+# Asset-specific portfolio allocations based on economic scenario hedging:
+# - Deflation hedge (USDCHF): Strong in deflationary environments
+# - Inflation hedge (XAUUSD): Protects against monetary debasement
+# - Standard forex (GBPUSD, EURUSD): Balanced risk/reward
+# - Commodities (XAGUSD, AUDUSD): Inflation protection + industrial demand
+#
+# Position sizing: Risk = DEFAULT_RISK_PERCENT × allocated_capital
+# Example with $50,078.20 balance and 1% risk:
+#   USDCHF: $50,078.20 × 20% = $10,015.64 → $100.16 risk per trade
+#   XAUUSD: $50,078.20 × 18% = $9,014.08 → $90.14 risk per trade
+#   GBPUSD: $50,078.20 × 16% = $8,012.51 → $80.13 risk per trade
+#   XAGUSD: $50,078.20 × 15% = $7,511.73 → $75.12 risk per trade
+# ═══════════════════════════════════════════════════════════════════
+
+ASSET_ALLOCATIONS = {
+    'USDCHF': 0.20,   # 20% - Deflation hedge (safe haven currency)
+    'XAUUSD': 0.18,   # 18% - Inflation hedge (gold standard)
+    'GBPUSD': 0.16,   # 16% - Standard forex exposure
+    'EURUSD': 0.16,   # 16% - Standard forex exposure
+    'XAGUSD': 0.15,   # 15% - Commodity/industrial metal
+    'AUDUSD': 0.15,   # 15% - Commodity currency
+}
+
+# Default risk percentage per trade (% of allocated capital, not total portfolio)
+DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
+
 class AdvancedMT5TradingMonitorGUI:
     """
     Advanced MT5 Trading Monitor with Strategy Phase Tracking
@@ -3127,10 +3156,44 @@ class AdvancedMT5TradingMonitorGUI:
                                     "WARNING", critical=True)
                 return False  # Don't open duplicate position
             
-            # Calculate position size based on risk
+            # ═══════════════════════════════════════════════════════════════════
+            # DALIO ALL-WEATHER PORTFOLIO ALLOCATION - POSITION SIZING
+            # ═══════════════════════════════════════════════════════════════════
+            # Calculate position size using asset-specific allocation
+            # Risk = risk_percent × allocated_capital (NOT total portfolio)
+            # ═══════════════════════════════════════════════════════════════════
+            
+            # Get real-time account balance from MT5
             balance = account_info.balance
-            risk_percent = config.get('RISK_PER_TRADE', 0.01)  # Default 1%
-            risk_amount = balance * risk_percent
+            
+            # Get asset-specific allocation (default 16% if symbol not in allocations)
+            allocation_percent = ASSET_ALLOCATIONS.get(symbol, 0.16)
+            allocated_capital = balance * allocation_percent
+            
+            # Get risk percentage (configurable per strategy, default 1%)
+            # This is % of ALLOCATED capital, not total portfolio
+            risk_percent = config.get('RISK_PER_TRADE', DEFAULT_RISK_PERCENT)
+            
+            # Calculate risk amount based on allocated capital
+            risk_amount = allocated_capital * risk_percent
+            
+            # Log allocation details for transparency
+            self.terminal_log(
+                f"💰 {symbol}: Dalio Allocation System",
+                "INFO", critical=True
+            )
+            self.terminal_log(
+                f"   Portfolio Balance: ${balance:,.2f}",
+                "INFO", critical=True
+            )
+            self.terminal_log(
+                f"   Asset Allocation: {allocation_percent*100:.0f}% = ${allocated_capital:,.2f}",
+                "INFO", critical=True
+            )
+            self.terminal_log(
+                f"   Risk Per Trade: {risk_percent*100:.1f}% of allocated = ${risk_amount:.2f}",
+                "INFO", critical=True
+            )
             
             # Get ATR for stop loss calculation from indicators
             current_state = self.strategy_states.get(symbol, {})
@@ -3190,9 +3253,13 @@ class AdvancedMT5TradingMonitorGUI:
             # This automatically accounts for contract size through value_per_point
             lot_size = risk_amount / (sl_distance / point * value_per_point)
             
-            # 💰 Calculate position sizing with new formula
-            self.terminal_log(f"💰 {symbol}: Position Sizing Details:", "DEBUG", critical=True)
-            self.terminal_log(f"   Balance: ${balance:.2f} | Risk: {risk_percent*100:.1f}% = ${risk_amount:.2f}", "DEBUG", critical=True)
+            # 💰 Calculate position sizing with Dalio allocation formula
+            self.terminal_log(f"💰 {symbol}: Position Sizing Calculation:", "DEBUG", critical=True)
+            self.terminal_log(
+                f"   Allocated: ${allocated_capital:,.2f} ({allocation_percent*100:.0f}% of ${balance:,.2f}) | "
+                f"Risk: {risk_percent*100:.1f}% = ${risk_amount:.2f}",
+                "DEBUG", critical=True
+            )
             self.terminal_log(f"   SL Distance: {sl_distance:.5f} price units ({sl_distance/point:.1f} points)", "DEBUG", critical=True)
             self.terminal_log(f"   Contract Size: {contract_size} | Tick Value: ${tick_value:.2f} | Value/Point: ${value_per_point:.2f}", "DEBUG", critical=True)
             self.terminal_log(f"   Calculated Volume: {lot_size:.6f} lots (BEFORE limits)", "DEBUG", critical=True)
