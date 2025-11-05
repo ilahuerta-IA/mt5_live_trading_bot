@@ -823,7 +823,7 @@ class AdvancedMT5TradingMonitorGUI:
                 # ⚡ CRITICAL: Increment bar counter for window expiry tracking
                 # This must happen in fast path too, otherwise window never expires!
                 if len(df) > 0:
-                    current_candle_time = df.index[-1]
+                    current_candle_time = df['time'].iloc[-1]  # 🔧 FIX: Use actual timestamp, not df index
                     
                     # Check if this is a new candle (timestamp changed)
                     if 'last_candle_time' not in state or state['last_candle_time'] != current_candle_time:
