@@ -1,0 +1,66 @@
+﻿================================================================
+MT5 BOT - ENTRY ANALYSIS REPORT (Nov 4, 2025)
+================================================================
+
+AUDUSD ENTRY #1 - 00:30:02 (Entry @ 0.65391)
+================================================================
+Timeline:
+  [00:00:00]  GLOBAL INVALIDATION - Bearish cross in ARMED_LONG (from previous signal)
+  [00:05:00]  NEW BULLISH CROSSOVER detected (Candle: 01:00:00)
+             ALL 6 FILTERS PASSED (ATR, Angle, Price, Candle, EMA Order, Time)
+             State: SCANNING  ARMED_LONG
+  [00:10:01] Candle #1: 01:05:00 - BULLISH (Not pullback) - Count: 0/2
+  [00:15:01] Candle #2: 01:10:00 - BEARISH (Pullback!) - Count: 1/2
+  [00:25:02] Candles #3-4: Gap detected, processed 2 candles
+            Candle 01:15:00 - BEARISH (Pullback!) - Count: 2/2
+             WINDOW OPENED
+  [00:30:02]  BREAKOUT detected - ENTRY @ 0.65391
+
+Status:  VALID - Crossover at 01:00, entry 25 mins later after pullback
+
+
+AUDUSD ENTRY #2 - 03:05:01 (Entry @ 0.65282)
+================================================================
+Timeline:
+  [02:05:03]  GLOBAL INVALIDATION - Bearish cross in ARMED_LONG (from previous)
+  [02:45:04]  NEW BULLISH CROSSOVER detected (Candle: 03:40:00)
+            (Need to verify filters)
+  [03:00:00]  ANOTHER BULLISH CROSSOVER (Candle: 03:55:00)
+             ALL 6 FILTERS PASSED
+             State: SCANNING  ARMED_LONG
+  [03:05:01]  BREAKOUT detected - ENTRY @ 0.65282
+
+Status:  NEED TO VERIFY - Quick entry (5 mins after crossover)
+
+
+GLOBAL INVALIDATION SUMMARY (All Assets)
+================================================================
+Confirmed Invalidations (State reset to SCANNING):
+  1. [23:50:04] GBPUSD - Bearish cross invalidated ARMED_LONG
+  2. [00:00:00] AUDUSD - Bearish cross invalidated ARMED_LONG
+  3. [02:05:03] AUDUSD - Bearish cross invalidated ARMED_LONG (again)
+
+Detected Warnings (no ARMED state, so no action):
+  - Multiple bearish crossovers logged for all assets
+  - System correctly ignored when state = SCANNING
+  - Working as designed 
+
+FILTER VALIDATION ACROSS ALL ASSETS
+================================================================
+ ATR Filter: Working (rejecting out-of-range values)
+ Angle Filter: Working (rejecting insufficient slopes)
+ Price Filter: Working (rejecting price below Filter EMA)
+ Candle Direction: Working (checking previous candle color)
+ EMA Ordering: Working (checking EMA alignment)
+ Time Filter: Working (rejecting outside trading hours)
+ Global Invalidation: Working (resetting on opposite crossovers)
+
+CONCLUSION
+================================================================
+ Global Invalidation is WORKING CORRECTLY
+ Both GBPUSD and AUDUSD had signals properly invalidated
+ System resets to SCANNING when opposite crossover occurs
+ All 6 validation filters are functioning as designed
+ Entry #2 needs detailed review (very quick entry after crossover)
+
+Next Step: Review second AUDUSD entry for pullback validation

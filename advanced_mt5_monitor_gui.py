@@ -1439,46 +1439,58 @@ class AdvancedMT5TradingMonitorGUI:
                 self.terminal_log(f"🔍 {symbol}: Bullish crossover detected - validating ALL filters...", 
                                 "INFO", critical=True)
                 
+                all_filters_passed = True
+                
                 # 1. ATR Filter
-                if not self._validate_atr_filter(symbol, df_closed, 'LONG'):
-                    bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by ATR filter", 
-                                    "WARNING", critical=True)
+                atr_passed = self._validate_atr_filter(symbol, df_closed, 'LONG')
+                self.terminal_log(f"   📊 {symbol}: ATR filter → {'✅ PASS' if atr_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not atr_passed:
+                    all_filters_passed = False
                 
-                # 2. Angle Filter (if passed ATR)
-                elif not self._validate_angle_filter(symbol, df_closed, 'LONG'):
-                    bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Angle filter", 
-                                    "WARNING", critical=True)
+                # 2. Angle Filter
+                angle_passed = self._validate_angle_filter(symbol, df_closed, 'LONG')
+                self.terminal_log(f"   📐 {symbol}: Angle filter → {'✅ PASS' if angle_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not angle_passed:
+                    all_filters_passed = False
                 
-                # 3. Price Filter (if passed angle)
-                elif not self._validate_price_filter(symbol, df_closed, 'LONG'):
-                    bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Price filter", 
-                                    "WARNING", critical=True)
+                # 3. Price Filter
+                price_passed = self._validate_price_filter(symbol, df_closed, 'LONG')
+                self.terminal_log(f"   💰 {symbol}: Price filter → {'✅ PASS' if price_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not price_passed:
+                    all_filters_passed = False
                 
-                # 4. Candle Direction (if passed price)
-                elif not self._validate_candle_direction(symbol, df_closed, 'LONG'):
-                    bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Candle Direction filter", 
-                                    "WARNING", critical=True)
+                # 4. Candle Direction
+                candle_passed = self._validate_candle_direction(symbol, df_closed, 'LONG')
+                self.terminal_log(f"   🕯️ {symbol}: Candle Direction → {'✅ PASS' if candle_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not candle_passed:
+                    all_filters_passed = False
                 
-                # 5. EMA Ordering (if passed candle)
-                elif not self._validate_ema_ordering(symbol, confirm_ema, fast_ema, medium_ema, slow_ema, 'LONG'):
-                    bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by EMA Ordering filter", 
-                                    "WARNING", critical=True)
+                # 5. EMA Ordering
+                ema_order_passed = self._validate_ema_ordering(symbol, confirm_ema, fast_ema, medium_ema, slow_ema, 'LONG')
+                self.terminal_log(f"   📈 {symbol}: EMA Ordering → {'✅ PASS' if ema_order_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not ema_order_passed:
+                    all_filters_passed = False
                 
-                # 6. Time Filter (if passed EMA ordering)
-                elif not self._validate_time_filter(symbol, current_dt, 'LONG'):
-                    bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED by Time filter", 
-                                    "WARNING", critical=True)
+                # 6. Time Filter
+                time_passed = self._validate_time_filter(symbol, current_dt, 'LONG')
+                self.terminal_log(f"   ⏰ {symbol}: Time filter → {'✅ PASS' if time_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not time_passed:
+                    all_filters_passed = False
                 
-                else:
-                    # ALL FILTERS PASSED!
+                # Final decision
+                if all_filters_passed:
                     self.terminal_log(f"✅ {symbol}: LONG crossover PASSED ALL FILTERS - Ready to ARM", 
                                     "SUCCESS", critical=True)
+                else:
+                    bullish_crossover = False
+                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED - One or more filters failed", 
+                                    "WARNING", critical=True)
             
             # ===================================================================
             # CRITICAL: BEARISH CROSSOVER HANDLING
