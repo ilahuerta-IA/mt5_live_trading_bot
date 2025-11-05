@@ -6,7 +6,7 @@
 [![MetaTrader 5](https://img.shields.io/badge/MetaTrader-5-green.svg)](https://www.metatrader5.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![MT5 Advanced Monitor GUI](Advanced%20MT5%20Monitor.png)
+![MT5 Advanced Monitor GUI](docs/Advanced%20MT5%20Monitor.png)
 
 ## 🎯 Overview
 
