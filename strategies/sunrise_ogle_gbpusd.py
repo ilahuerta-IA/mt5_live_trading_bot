@@ -195,7 +195,7 @@ SHOW_INDIVIDUAL_PLOTS = False         # Show individual LONG/SHORT plots when ru
 AUTO_PLOT_SINGLE_MODE = False         # Automatically plot in single mode (LONG-only or SHORT-only)
 
 # === LONG ATR VOLATILITY FILTER ===
-LONG_USE_ATR_FILTER = True                  # ✅ FIXED: Enable ATR-based volatility filtering for long entries
+LONG_USE_ATR_FILTER = False                 # Enable ATR-based volatility filtering for long entries
 LONG_ATR_MIN_THRESHOLD = 0.000300          
 LONG_ATR_MAX_THRESHOLD = 0.000700 #0.000325        
 # ATR INCREMENT FILTER (DISABLED - Inferior Performance)
@@ -232,7 +232,7 @@ WINDOW_OFFSET_MULTIPLIER = 1.0             # Window delay multiplier (0.5=fast, 
                                           # Formula: window_start = current_bar + (pullback_count × this_value)
                                           # * EXPERIMENT: Try 0.5 for aggressive, 1.5 for conservative entries
 # * WINDOW_PRICE_OFFSET_MULTIPLIER: Controls the price expansion of the two-sided channel
-WINDOW_PRICE_OFFSET_MULTIPLIER = 0.001     # ✅ FIXED: Price expansion multiplier (was 1.0, now 0.001)
+WINDOW_PRICE_OFFSET_MULTIPLIER = 1.0 #0.01      # NEW: Price expansion multiplier (0.5 = 50% of candle range)
                                           # Formula: channel_width = candle_range × this_value
 # ===============================================================
 

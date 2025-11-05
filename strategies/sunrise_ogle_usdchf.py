@@ -294,7 +294,7 @@ WINDOW_OFFSET_MULTIPLIER = 1.0             # Window delay multiplier (0.5=fast, 
                                           # Formula: window_start = current_bar + (pullback_count × this_value)
                                           # 🔬 EXPERIMENT: Try 0.5 for aggressive, 1.5 for conservative entries
 # 🔧 WINDOW_PRICE_OFFSET_MULTIPLIER: Controls the price expansion of the two-sided channel
-WINDOW_PRICE_OFFSET_MULTIPLIER = 0.001     # ✅ FIXED: Price expansion multiplier (was 0.01, now 0.001)
+WINDOW_PRICE_OFFSET_MULTIPLIER = 0.01 #0.05      # NEW: Price expansion multiplier (0.5 = 50% of candle range)
                                           # Formula: channel_width = candle_range × this_value
 # ===============================================================
 

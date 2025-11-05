@@ -211,7 +211,7 @@ LONG_MAX_ANGLE = 85.0                       # EXPANDED: Much wider angle range f
 LONG_ANGLE_SCALE_FACTOR = 10000.0           # Scaling factor for angle calculation sensitivity (long entries)
 
 # === LONG PULLBACK ENTRY SYSTEM ===
-LONG_USE_PULLBACK_ENTRY = True             # ✅ FIXED: Enable 3-phase pullback entry system
+LONG_USE_PULLBACK_ENTRY = False            # DISABLED: Use standard entries for testing
 LONG_PULLBACK_MAX_CANDLES = 2              # Max red candles in pullback for long entries (1-3 recommended)
 LONG_ENTRY_WINDOW_PERIODS = 1 #10 #7             # Bars to wait for breakout after pullback (long entries)
 
@@ -225,7 +225,7 @@ USE_WINDOW_TIME_OFFSET = False              # NEW: Enable/disable the time delay
 WINDOW_OFFSET_MULTIPLIER = 1.0             # Window delay multiplier (0.5=fast, 1.0=standard, 2.0=conservative)
                                           # Formula: window_start = current_bar + (pullback_count × this_value)
 # * WINDOW_PRICE_OFFSET_MULTIPLIER: Controls the price expansion of the two-sided channel
-WINDOW_PRICE_OFFSET_MULTIPLIER = 0.001     # ✅ FIXED: Price expansion multiplier (was 0.01, now 0.001)
+WINDOW_PRICE_OFFSET_MULTIPLIER = 0.01 #0.01      # NEW: Price expansion multiplier (0.5 = 50% of candle range)
                                           # Formula: channel_width = candle_range × this_value
 # ===============================================================
 
