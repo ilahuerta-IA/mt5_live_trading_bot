@@ -19,6 +19,9 @@ mplfinance>=0.12.0            # Financial charts and candlesticks
 python-dateutil>=2.8.0       # Date/time utilities
 pytz>=2022.1                  # Timezone handling
 
+# === BUILD TOOL (FOR CREATING .EXE) ===
+pyinstaller>=5.13.0          # Create standalone executable
+
 # === OPTIONAL ENHANCEMENTS ===
 requests>=2.28.0              # HTTP requests (for future API features)
 psutil>=5.9.0                 # System monitoring (for performance tracking)

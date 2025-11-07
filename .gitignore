@@ -144,6 +144,21 @@ local.properties
 *.orig
 
 # ===================
+# EXECUTABLES & BUILD ARTIFACTS - DO NOT COMMIT!
+# ===================
+
+# Compiled executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# ===================
 # MT5 SPECIFIC
 # ===================
 
