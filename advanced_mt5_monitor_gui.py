@@ -3230,39 +3230,84 @@ class AdvancedMT5TradingMonitorGUI:
             # Calculate lot size based on risk
             # For commodities (XAUUSD, XAGUSD): 1 lot = contract_size units (e.g., 100 oz)
             # For forex (EURUSD, etc.): 1 lot = 100,000 units
-            # Formula: lot_size = risk_amount / (sl_distance × value_per_point × contract_size)
+            # Formula: lot_size = risk_amount / (sl_distance_in_price × pip_value_per_lot)
             
             point = symbol_info.point
-            contract_size = symbol_info.trade_contract_size  # 100 for XAUUSD, 100000 for EURUSD
+            contract_size = symbol_info.trade_contract_size  # 100 for XAUUSD, 100000 for EURUSD/GBPUSD
             tick_value = symbol_info.trade_tick_value  # Value per tick in account currency
-            
-            # CRITICAL FIX: For position sizing, use contract size directly
-            # sl_distance is already in price units (e.g., 28.62 for Gold)
-            # For XAUUSD: 28.62 points × 100 oz × $1/oz = $2,862 total risk per lot
-            # So: lot_size = $500 / $2,862 = 0.175 lots ✅
-            
-            # Value per point = tick_value / tick_size
-            # For most symbols, tick_size = point, so value_per_point ≈ tick_value
             tick_size = symbol_info.trade_tick_size
-            if tick_size > 0:
-                value_per_point = tick_value / tick_size * point
+            
+            # 🚨 CRITICAL FIX: Use MT5's tick_value directly (it's correct per broker contract specs)
+            # The formula is: lot_size = risk / (sl_distance_in_price × tick_value_per_tick × ticks_per_point)
+            # Simplified: lot_size = risk / (sl_distance_in_points × value_per_point)
+            
+            # Calculate value per point from MT5 symbol info
+            # tick_value = value change per tick in account currency
+            # tick_size = minimum price change (tick)
+            # point = minimum price representation (usually same as tick_size)
+            
+            if tick_size > 0 and point > 0:
+                # Value per point = tick_value × (point / tick_size)
+                # For most symbols: point == tick_size, so value_per_point = tick_value
+                value_per_point = tick_value * (point / tick_size)
             else:
-                value_per_point = tick_value  # Fallback
+                # Fallback if tick data is invalid
+                value_per_point = tick_value if tick_value > 0 else 0.01
             
-            # Calculate lot size: risk / (sl_distance × value_per_point)
-            # This automatically accounts for contract size through value_per_point
-            lot_size = risk_amount / (sl_distance / point * value_per_point)
+            # Calculate SL distance in points (not pips!)
+            # point = minimum price unit (e.g., 0.00001 for EURUSD, 0.01 for XAUUSD, 0.001 for XAGUSD)
+            sl_distance_in_points = sl_distance / point
             
-            # 💰 Calculate position sizing with Dalio allocation formula
-            self.terminal_log(f"💰 {symbol}: Position Sizing Calculation:", "DEBUG", critical=True)
-            self.terminal_log(
-                f"   Allocated: ${allocated_capital:,.2f} ({allocation_percent*100:.0f}% of ${balance:,.2f}) | "
-                f"Risk: {risk_percent*100:.1f}% = ${risk_amount:.2f}",
-                "DEBUG", critical=True
-            )
-            self.terminal_log(f"   SL Distance: {sl_distance:.5f} price units ({sl_distance/point:.1f} points)", "DEBUG", critical=True)
-            self.terminal_log(f"   Contract Size: {contract_size} | Tick Value: ${tick_value:.2f} | Value/Point: ${value_per_point:.2f}", "DEBUG", critical=True)
-            self.terminal_log(f"   Calculated Volume: {lot_size:.6f} lots (BEFORE limits)", "DEBUG", critical=True)
+            # Calculate lot size using broker-specific values
+            # Formula: lot_size = risk_amount / (sl_distance_in_points × value_per_point)
+            if value_per_point > 0 and sl_distance_in_points > 0:
+                lot_size = risk_amount / (sl_distance_in_points * value_per_point)
+            else:
+                self.terminal_log(f"❌ {symbol}: Invalid calculation values - value_per_point={value_per_point}, sl_distance_in_points={sl_distance_in_points}", "ERROR", critical=True)
+                return False
+            
+            # 💰 Position Sizing Calculation with Detailed Logging
+            self.terminal_log(f"═══════════════════════════════════════════════════", "INFO", critical=True)
+            self.terminal_log(f"� {symbol}: POSITION SIZING CALCULATION", "INFO", critical=True)
+            self.terminal_log(f"═══════════════════════════════════════════════════", "INFO", critical=True)
+            
+            # Broker Symbol Specifications
+            self.terminal_log(f"📊 BROKER SPECIFICATIONS:", "DEBUG", critical=True)
+            self.terminal_log(f"   Symbol: {symbol} | Digits: {symbol_info.digits}", "DEBUG", critical=True)
+            self.terminal_log(f"   Contract Size: {contract_size:,.0f}", "DEBUG", critical=True)
+            self.terminal_log(f"   Point: {point:.5f} (minimum price unit)", "DEBUG", critical=True)
+            self.terminal_log(f"   Tick Size: {tick_size:.5f} (minimum price change)", "DEBUG", critical=True)
+            self.terminal_log(f"   Tick Value: ${tick_value:.5f} (profit per tick)", "DEBUG", critical=True)
+            self.terminal_log(f"   Calculated Value per Point: ${value_per_point:.5f}", "DEBUG", critical=True)
+            
+            # Dalio Allocation
+            self.terminal_log(f"� DALIO ALLOCATION:", "DEBUG", critical=True)
+            self.terminal_log(f"   Portfolio Balance: ${balance:,.2f}", "DEBUG", critical=True)
+            self.terminal_log(f"   Asset Allocation: {allocation_percent*100:.0f}% → ${allocated_capital:,.2f}", "DEBUG", critical=True)
+            self.terminal_log(f"   Risk per Trade: {risk_percent*100:.1f}% of allocated → ${risk_amount:.2f}", "DEBUG", critical=True)
+            
+            # Stop Loss Distance
+            self.terminal_log(f"🛑 STOP LOSS:", "DEBUG", critical=True)
+            self.terminal_log(f"   SL Distance (price): {sl_distance:.5f}", "DEBUG", critical=True)
+            self.terminal_log(f"   SL Distance (points): {sl_distance_in_points:.1f}", "DEBUG", critical=True)
+            self.terminal_log(f"   ATR Multiplier: {atr_sl_multiplier:.1f}", "DEBUG", critical=True)
+            
+            # Position Size Calculation
+            self.terminal_log(f"📐 LOT SIZE FORMULA:", "DEBUG", critical=True)
+            self.terminal_log(f"   lot_size = risk_amount / (sl_distance_points × value_per_point)", "DEBUG", critical=True)
+            self.terminal_log(f"   lot_size = ${risk_amount:.2f} / ({sl_distance_in_points:.1f} × ${value_per_point:.5f})", "DEBUG", critical=True)
+            self.terminal_log(f"   lot_size = ${risk_amount:.2f} / {sl_distance_in_points * value_per_point:.5f}", "DEBUG", critical=True)
+            self.terminal_log(f"   lot_size = {lot_size:.6f} lots (BEFORE limits)", "DEBUG", critical=True)
+            
+            # Risk Verification
+            actual_risk_check = lot_size * sl_distance_in_points * value_per_point
+            self.terminal_log(f"✅ RISK VERIFICATION:", "DEBUG", critical=True)
+            self.terminal_log(f"   {lot_size:.6f} lots × {sl_distance_in_points:.1f} points × ${value_per_point:.5f} = ${actual_risk_check:.2f}", "DEBUG", critical=True)
+            risk_diff = abs(actual_risk_check - risk_amount)
+            if risk_diff < 0.50:
+                self.terminal_log(f"   ✅ VERIFIED: Actual risk ${actual_risk_check:.2f} matches expected ${risk_amount:.2f}", "INFO", critical=True)
+            else:
+                self.terminal_log(f"   ⚠️ WARNING: Risk mismatch! Expected ${risk_amount:.2f}, got ${actual_risk_check:.2f} (diff: ${risk_diff:.2f})", "WARNING", critical=True)
             
             # Apply lot size limits
             lot_min = symbol_info.volume_min

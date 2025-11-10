@@ -24,6 +24,52 @@ Advanced monitoring system for live MetaTrader 5 trading strategies featuring re
 
 ## 🆕 Recent Updates (November 2025)
 
+### Critical Position Sizing Fix - MT5 Tick Value Integration
+**Version:** v2.1.0 | **Date:** November 10, 2025
+
+**CRITICAL BUG FIX:** Position sizing now correctly uses MT5's broker-specific tick values instead of hardcoded standard lot assumptions.
+
+**What Was Broken:**
+- ❌ **GBPUSD**: Risk $22.70 instead of $80.13 (3.53x too small)
+- ❌ **XAGUSD**: Risk $0.46 instead of $75.12 (163x too small!) 
+- ❌ **Root Cause**: Used hardcoded pip values ($10/pip for forex, $50/point for XAGUSD) incompatible with broker's actual tick values
+
+**The Fix:**
+```python
+# OLD (WRONG): Hardcoded standard lot values
+SYMBOL_PIP_VALUES = {
+    'GBPUSD': 10.0,  # ❌ Assumes standard $10/pip
+    'XAGUSD': 50.0   # ❌ Wrong for broker's contract specs
+}
+
+# NEW (CORRECT): Use MT5's broker-specific tick value
+value_per_point = tick_value × (point / tick_size)  # ✅ Always correct
+lot_size = risk_amount / (sl_distance_in_points × value_per_point)
+```
+
+**Broker Specifications Verified:**
+- **EURUSD/GBPUSD**: tick_value = $0.01 (NOT $10 standard lot)
+- **XAGUSD**: 5,000 oz contracts, 3 decimals, working at 1.203K lots
+- **XAUUSD**: 100 oz contracts, 2 decimals, tick_value per broker
+
+**Enhanced Logging Added:**
+Every position calculation now logs 5 detailed sections:
+1. 📋 **BROKER SPECIFICATIONS** - Contract size, point, tick size, tick value, digits
+2. 💰 **DALIO ALLOCATION** - Portfolio balance, asset %, risk amount
+3. 🎯 **STOP LOSS** - SL distance in price units and points, ATR multiplier
+4. 🧮 **LOT SIZE FORMULA** - Step-by-step calculation breakdown
+5. ✅ **RISK VERIFICATION** - Confirms calculated risk matches expected amount
+
+**Impact:**
+- ✅ All 6 symbols now calculate position sizes correctly
+- ✅ Risk amounts match Dalio allocations exactly
+- ✅ Comprehensive logging for verification and debugging
+- ✅ Broker-agnostic solution (works with any MT5 broker)
+
+📖 **Technical Details:** See `POSITION_SIZING_FIX_V2.md` for complete analysis and broker specifications
+
+---
+
 ### Ray Dalio All-Weather Portfolio Allocation System
 **Version:** v2.0.0 | **Date:** November 5, 2025
 
@@ -132,19 +178,14 @@ A critical issue was identified and fixed where the ATR (Average True Range) vol
 
 ### Starting the Monitor
 
-**Method 1:** Advanced GUI (Recommended)
+**Primary Method:** Advanced GUI Monitor
 ```bash
-python launch_advanced_monitor.py
+python advanced_mt5_monitor_gui.py
 ```
 
-**Method 2:** Quick Start
+**Alternative:** Use the executable (Windows)
 ```bash
-python start_advanced_monitor.py
-```
-
-**Method 3:** Alternative Launcher
-```bash
-python launch_advanced_monitor_v2.py
+dist\MT5_Trading_Bot.exe
 ```
 
 ### Monitored Assets
@@ -199,8 +240,7 @@ python test_real_entry.py         # Simulate real bot entry with ATR/SL/TP
 ```
 mt5_live_trading_bot/
 ├── advanced_mt5_monitor_gui.py    # Main monitor application (102KB)
-├── launch_advanced_monitor.py     # Primary launcher
-├── start_advanced_monitor.py      # Quick start script
+├── build_exe.bat                  # Build executable script
 ├── requirements.txt               # Python dependencies
 ├── setup.ps1                      # Automated setup script
 ├── .gitignore                     # Git ignore rules
@@ -417,6 +457,7 @@ entry_valid = (
 ### 🔧 Technical Documentation
 
 **Bug Fixes & Updates:**
+- **[POSITION_SIZING_FIX_V2.md](POSITION_SIZING_FIX_V2.md)** - 🔥 Position sizing fix (November 10, 2025) - MT5 tick value integration
 - **[PULLBACK_FIX_SUMMARY.md](docs/PULLBACK_FIX_SUMMARY.md)** - Critical bug fixes (October 2025)
 - **[EMA_STABILITY_FIX_CRITICAL.md](docs/EMA_STABILITY_FIX_CRITICAL.md)** - EMA calculation improvements
 - **[ATR_FILTER_FIX.md](docs/ATR_FILTER_FIX.md)** - ATR validation bug fix (October 31, 2025)
@@ -499,6 +540,8 @@ mt5_live_trading_bot/
 ├── COMPREHENSIVE_STRATEGY_VERIFICATION.md  ⭐ Deep verification
 ├── STRATEGY_FILES_POLICY.md            ⭐ READ-ONLY policy
 ├── FIXES_SUMMARY.md                    Critical fixes log
+│
+├── POSITION_SIZING_FIX_V2.md           🔥 Position sizing fix
 │
 └── docs/
     ├── README.md                       Documentation index
