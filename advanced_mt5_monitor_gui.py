@@ -505,7 +505,11 @@ class AdvancedMT5TradingMonitorGUI:
                 config = self.parse_strategy_config(strategy_file, symbol)
                 self.strategy_configs[symbol] = config
                 
-                self.terminal_log(f"✅ {symbol}: Configuration loaded", "SUCCESS")
+                # Debug log for pullback configuration
+                pullback_enabled = config.get('LONG_USE_PULLBACK_ENTRY', 'N/A')
+                pullback_max = config.get('LONG_PULLBACK_MAX_CANDLES', 'N/A')
+                window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS', 'N/A')
+                self.terminal_log(f"✅ {symbol}: Configuration loaded | Pullback: {pullback_enabled}, Max: {pullback_max}, Window: {window_periods}", "SUCCESS")
                 
             except Exception as e:
                 self.terminal_log(f"❌ {symbol}: Config load error - {str(e)}", "ERROR")
@@ -2035,36 +2039,20 @@ class AdvancedMT5TradingMonitorGUI:
                 
                 # Transition to ARMED if signal detected
                 if signal_direction:
-                    current_state['entry_state'] = f"ARMED_{signal_direction}"
-                    current_state['phase'] = 'WAITING_PULLBACK'
-                    current_state['armed_direction'] = signal_direction
-                    current_state['pullback_candle_count'] = 0
+                    # ✅ CRITICAL: Check if pullback system is enabled for this direction
+                    use_pullback = False
+                    if signal_direction == 'LONG':
+                        use_pullback_str = str(config.get('LONG_USE_PULLBACK_ENTRY', 'True')).strip()
+                        use_pullback = use_pullback_str.lower() in ['true', '1', 'yes']
+                    elif signal_direction == 'SHORT':
+                        use_pullback_str = str(config.get('SHORT_USE_PULLBACK_ENTRY', 'True')).strip()
+                        use_pullback = use_pullback_str.lower() in ['true', '1', 'yes']
                     
-                    # Store trigger candle (using last closed candle from dataframe)
-                    # ⚠️ CRITICAL: df already has forming candle removed at line 747!
-                    # Use iloc[-1] for the CURRENT closed candle that triggered the crossover
-                    if len(df) >= 1:
-                        # ✅ FIX: Use 'time' column for timestamp, NOT df.index
-                        arming_candle_time = df['time'].iloc[-1] if len(df) > 0 else current_dt
-                        
-                        current_state['signal_trigger_candle'] = {
-                            'open': float(df['open'].iloc[-1]),
-                            'close': float(df['close'].iloc[-1]),
-                            'high': float(df['high'].iloc[-1]),
-                            'low': float(df['low'].iloc[-1]),
-                            'datetime': arming_candle_time,
-                            'is_bullish': df['close'].iloc[-1] > df['open'].iloc[-1],
-                            'is_bearish': df['close'].iloc[-1] < df['open'].iloc[-1]
-                        }
-                        
-                        # ✅ CRITICAL FIX: Mark CURRENT last closed candle as already processed
-                        # The crossover is detected on the current closed candle (index -1)
-                        # We must mark it to prevent checking the arming candle itself for pullbacks
-                        # ✅ FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
-                        current_last_candle_time = df['time'].iloc[-1]
-                        current_state['last_pullback_check_candle'] = current_last_candle_time
+                    # Get current price for context
+                    current_price = df['close'].iloc[-1] if len(df) > 0 else 0
+                    digits = current_state.get('digits', 5)
                     
-                    # ✅ CRITICAL FIX: Clear crossover flags after consuming them
+                    # ✅ CRITICAL FIX: Clear crossover flags after consuming them FIRST
                     # This prevents re-arming on the same crossover signal repeatedly
                     current_state['crossover_data'] = {
                         'bullish_crossover': False,
@@ -2072,29 +2060,76 @@ class AdvancedMT5TradingMonitorGUI:
                         'candle_time': crossover_data.get('candle_time', current_dt)
                     }
                     
-                    # Get current price for context
-                    current_price = df['close'].iloc[-1] if len(df) > 0 else 0
-                    digits = current_state.get('digits', 5)
-                    
-                    # Get pullback requirements
-                    if signal_direction == 'LONG':
-                        max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
-                        pullback_type = "BEARISH (Red)"
+                    if use_pullback:
+                        # 🔄 PULLBACK MODE: Use 3-phase system (ARMED → WINDOW_OPEN → ENTRY)
+                        current_state['entry_state'] = f"ARMED_{signal_direction}"
+                        current_state['phase'] = 'WAITING_PULLBACK'
+                        current_state['armed_direction'] = signal_direction
+                        current_state['pullback_candle_count'] = 0
+                        
+                        # Store trigger candle (using last closed candle from dataframe)
+                        # ⚠️ CRITICAL: df already has forming candle removed at line 747!
+                        # Use iloc[-1] for the CURRENT closed candle that triggered the crossover
+                        if len(df) >= 1:
+                            # ✅ FIX: Use 'time' column for timestamp, NOT df.index
+                            arming_candle_time = df['time'].iloc[-1] if len(df) > 0 else current_dt
+                            
+                            current_state['signal_trigger_candle'] = {
+                                'open': float(df['open'].iloc[-1]),
+                                'close': float(df['close'].iloc[-1]),
+                                'high': float(df['high'].iloc[-1]),
+                                'low': float(df['low'].iloc[-1]),
+                                'datetime': arming_candle_time,
+                                'is_bullish': df['close'].iloc[-1] > df['open'].iloc[-1],
+                                'is_bearish': df['close'].iloc[-1] < df['open'].iloc[-1]
+                            }
+                            
+                            # ✅ CRITICAL FIX: Mark CURRENT last closed candle as already processed
+                            # The crossover is detected on the current closed candle (index -1)
+                            # We must mark it to prevent checking the arming candle itself for pullbacks
+                            # ✅ FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
+                            current_last_candle_time = df['time'].iloc[-1]
+                            current_state['last_pullback_check_candle'] = current_last_candle_time
+                        
+                        # Get pullback requirements
+                        if signal_direction == 'LONG':
+                            max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
+                            pullback_type = "BEARISH (Red)"
+                        else:
+                            max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
+                            pullback_type = "BULLISH (Green)"
+                        
+                        self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - State: SCANNING → ARMED_{signal_direction} | Price: {current_price:.{digits}f}", 
+                                        "SUCCESS", critical=True)
+                        self.terminal_log(f"📋 {symbol}: PULLBACK MODE - Monitoring for {max_candles} {pullback_type} pullback candles...", 
+                                        "INFO", critical=True)
+                        entry_state = f"ARMED_{signal_direction}"
+                        
+                        # 🛡️ INITIALIZE CANDLE SEQUENCE TRACKER - Ensures we never miss candles
+                        current_state['candle_sequence_counter'] = 0
+                        current_state['armed_at_candle_time'] = df['time'].iloc[-1]
+                        self.terminal_log(f"🔒 {symbol}: Candle sequence tracker initialized at {current_state['armed_at_candle_time']}", 
+                                        "INFO", critical=True)
                     else:
-                        max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
-                        pullback_type = "BULLISH (Green)"
-                    
-                    self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - State: SCANNING → ARMED_{signal_direction} | Price: {current_price:.{digits}f}", 
-                                    "SUCCESS", critical=True)
-                    self.terminal_log(f"📋 {symbol}: NOW MONITORING for {max_candles} {pullback_type} pullback candles...", 
-                                    "INFO", critical=True)
-                    entry_state = f"ARMED_{signal_direction}"
-                    
-                    # 🛡️ INITIALIZE CANDLE SEQUENCE TRACKER - Ensures we never miss candles
-                    current_state['candle_sequence_counter'] = 0
-                    current_state['armed_at_candle_time'] = df['time'].iloc[-1]
-                    self.terminal_log(f"🔒 {symbol}: Candle sequence tracker initialized at {current_state['armed_at_candle_time']}", 
-                                    "INFO", critical=True)
+                        # ⚡ STANDARD MODE: Enter immediately on crossover (no pullback wait)
+                        self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - STANDARD MODE (No pullback) | Price: {current_price:.{digits}f}", 
+                                        "SUCCESS", critical=True)
+                        self.terminal_log(f"⚡ {symbol}: Entering immediately (pullback system disabled)", 
+                                        "INFO", critical=True)
+                        
+                        # Execute entry directly
+                        entry_success = self._execute_entry(symbol, signal_direction, df, current_dt, config)
+                        
+                        if entry_success:
+                            self.terminal_log(f"✅ {symbol}: STANDARD ENTRY executed at {current_price:.{digits}f}", 
+                                            "SUCCESS", critical=True)
+                        else:
+                            self.terminal_log(f"❌ {symbol}: STANDARD ENTRY failed - Reset to SCANNING", 
+                                            "ERROR", critical=True)
+                        
+                        # Reset state to SCANNING after entry attempt
+                        self._reset_entry_state(symbol)
+                        entry_state = 'SCANNING'
             
             # ---------------------------------------------------------------
             # PHASE 2: ARMED → WINDOW_OPEN (Pullback Confirmation)
@@ -3115,6 +3150,55 @@ class AdvancedMT5TradingMonitorGUI:
             self.disconnect_mt5()
         else:
             self.initialize_mt5_connection()
+    
+    def _execute_entry(self, symbol: str, direction: str, df, current_dt, config: Dict):
+        """Execute immediate entry (standard mode without pullback)
+        
+        Args:
+            symbol: Trading symbol
+            direction: 'LONG' or 'SHORT'
+            df: DataFrame with price data
+            current_dt: Current datetime
+            config: Strategy configuration
+            
+        Returns:
+            True if trade executed successfully, False otherwise
+        """
+        if len(df) < 1:
+            self.terminal_log(f"❌ {symbol}: Cannot execute entry - no price data", "ERROR", critical=True)
+            return False
+        
+        current_state = self.strategy_states[symbol]
+        digits = current_state.get('digits', 5)
+        
+        # Get entry price (current close)
+        entry_price = float(df['close'].iloc[-1])
+        
+        # Final time check
+        if not self._is_in_trading_time_range(current_dt, config):
+            self.terminal_log(f"⏰ {symbol}: Entry rejected - outside trading hours", 
+                            "WARNING", critical=True)
+            return False
+        
+        # Execute trade
+        self.terminal_log(f"⚡ {symbol}: Executing STANDARD {direction} entry at {entry_price:.{digits}f}", 
+                        "INFO", critical=True)
+        
+        trade_executed = self.execute_trade(symbol, direction, entry_price, config)
+        
+        if trade_executed:
+            self.terminal_log(f"✅ {symbol}: STANDARD {direction} trade executed successfully!", 
+                            "SUCCESS", critical=True)
+            # Lock state to prevent duplicate entries
+            current_state['entry_state'] = 'IN_TRADE'
+            current_state['phase'] = 'TRADE_ACTIVE'
+            self.terminal_log(f"🔒 {symbol}: State locked - No new signals until position closes", 
+                            "INFO", critical=True)
+            return True
+        else:
+            self.terminal_log(f"❌ {symbol}: STANDARD {direction} trade execution FAILED", 
+                            "ERROR", critical=True)
+            return False
             
     def execute_trade(self, symbol: str, direction: str, price: float, config: Dict):
         """Execute a trade in MT5
@@ -3316,8 +3400,9 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Round to valid lot step
             lot_size = round(lot_size / lot_step) * lot_step
+            
+            # Apply broker's min/max limits (removed 0.1 cap!)
             lot_size = max(lot_min, min(lot_size, lot_max))
-            lot_size = max(lot_min, min(lot_size, 0.1))  # Additional safety limit
             
             # Log final volume after limits
             self.terminal_log(f"   Final Volume: {lot_size:.6f} lots (min={lot_min}, max={lot_max}, step={lot_step})", "DEBUG", critical=True)
