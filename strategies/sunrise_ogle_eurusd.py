@@ -191,7 +191,7 @@ AUTO_PLOT_SINGLE_MODE = False         # Automatically plot in single mode (LONG-
 # === LONG ATR VOLATILITY FILTER ===
 LONG_USE_ATR_FILTER = True                 # Enable ATR-based volatility filtering for long entries
 LONG_ATR_MIN_THRESHOLD = 0.000150          
-LONG_ATR_MAX_THRESHOLD = 0.000600 # INCREASED for testing - was 0.000499        
+LONG_ATR_MAX_THRESHOLD = 0.000499        
 # ATR INCREMENT FILTER (DISABLED - Inferior Performance)
 LONG_USE_ATR_INCREMENT_FILTER = True       #  OPTIMIZED: Increments showed inferior performance
 LONG_ATR_INCREMENT_MIN_THRESHOLD = 0.000050#0.000050 # EXPANDED: Much wider range for more entries
@@ -211,7 +211,7 @@ LONG_MAX_ANGLE = 85.0                       # EXPANDED: Much wider angle range f
 LONG_ANGLE_SCALE_FACTOR = 10000.0           # Scaling factor for angle calculation sensitivity (long entries)
 
 # === LONG PULLBACK ENTRY SYSTEM ===
-LONG_USE_PULLBACK_ENTRY = False            # DISABLED: Use standard entries for testing
+LONG_USE_PULLBACK_ENTRY = True             # Enable 3-phase pullback entry system for long entries
 LONG_PULLBACK_MAX_CANDLES = 2              # Max red candles in pullback for long entries (1-3 recommended)
 LONG_ENTRY_WINDOW_PERIODS = 1 #10 #7             # Bars to wait for breakout after pullback (long entries)
 
@@ -230,7 +230,7 @@ WINDOW_PRICE_OFFSET_MULTIPLIER = 0.01 #0.01      # NEW: Price expansion multipli
 # ===============================================================
 
 # === TIME RANGE FILTER ===
-USE_TIME_RANGE_FILTER = False             # DISABLED: Allow 24/7 trading for testing
+USE_TIME_RANGE_FILTER = True              # ENABLED: Time filter for complete analysis
 ENTRY_START_HOUR = 21#6                      # Start hour for entry window (UTC)
 ENTRY_START_MINUTE = 0                     # Start minute for entry window (UTC)
 ENTRY_END_HOUR = 3#18 #15                        # End hour for entry window (UTC)
@@ -2080,6 +2080,60 @@ class SunriseOgle(bt.Strategy):
                 return False
 
         return True
+    
+    def _is_in_trading_time_range(self, dt):
+        """Check if current time is within configured trading hours
+        
+        Converts broker time to UTC using offset from config file before checking.
+        This ensures time filter works correctly regardless of broker timezone.
+        
+        Args:
+            dt: datetime object from broker (in broker's local time)
+            
+        Returns:
+            bool: True if within trading hours, False otherwise
+        """
+        if not self.p.use_time_range_filter:
+            return True
+        
+        # Load UTC offset from config file
+        utc_offset = 1  # Default
+        try:
+            import os
+            import json
+            config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'broker_timezone.json')
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config_data = json.load(f)
+                    utc_offset = config_data.get('utc_offset', 1)
+        except Exception as e:
+            # If config file doesn't exist or can't be read, use default UTC+1
+            pass
+        
+        # Convert broker time to UTC by subtracting offset
+        from datetime import timedelta
+        utc_time = dt - timedelta(hours=utc_offset)
+        
+        current_hour = utc_time.hour
+        current_minute = utc_time.minute
+        
+        start_hour = self.p.entry_start_hour
+        start_minute = self.p.entry_start_minute
+        end_hour = self.p.entry_end_hour
+        end_minute = self.p.entry_end_minute
+        
+        # Convert times to minutes since midnight for easier comparison
+        current_time_minutes = current_hour * 60 + current_minute
+        start_time_minutes = start_hour * 60 + start_minute
+        end_time_minutes = end_hour * 60 + end_minute
+        
+        # Handle overnight ranges (e.g., 21:00 to 03:00)
+        if start_time_minutes > end_time_minutes:
+            # Trading window crosses midnight
+            return current_time_minutes >= start_time_minutes or current_time_minutes <= end_time_minutes
+        else:
+            # Normal trading window (same day)
+            return start_time_minutes <= current_time_minutes <= end_time_minutes
     
     def _basic_short_entry_conditions(self):
         """Check basic SHORT entry conditions 1 & 2 for pullback system"""

@@ -157,6 +157,9 @@ class AdvancedMT5TradingMonitorGUI:
         
         self.data_provider = None
         
+        # Broker UTC offset for time filter conversion
+        self.broker_utc_offset = self.load_utc_offset_from_config()
+        
         # Threading and communication
         self.monitor_thread = None
         self.stop_event = threading.Event()
@@ -243,11 +246,30 @@ class AdvancedMT5TradingMonitorGUI:
         control_frame = ttk.LabelFrame(parent, text="Monitoring Controls", padding="5")
         control_frame.pack(fill=tk.X, pady=(0, 5))
         
-        self.start_button = ttk.Button(control_frame, text="Start Monitoring", command=self.start_monitoring)
+        # First row: Start/Stop buttons
+        buttons_row = ttk.Frame(control_frame)
+        buttons_row.pack(fill=tk.X, pady=(0, 5))
+        
+        self.start_button = ttk.Button(buttons_row, text="Start Monitoring", command=self.start_monitoring)
         self.start_button.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.stop_button = ttk.Button(control_frame, text="Stop Monitoring", command=self.stop_monitoring, state=tk.DISABLED)
+        self.stop_button = ttk.Button(buttons_row, text="Stop Monitoring", command=self.stop_monitoring, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
+        
+        # Second row: UTC offset selector
+        utc_row = ttk.Frame(control_frame)
+        utc_row.pack(fill=tk.X)
+        
+        ttk.Label(utc_row, text="Broker UTC Offset:").pack(side=tk.LEFT, padx=(0, 5))
+        # Set initial value based on loaded offset
+        initial_offset = f"UTC+{self.broker_utc_offset}"
+        self.utc_offset_var = tk.StringVar(value=initial_offset)
+        self.utc_offset_combo = ttk.Combobox(utc_row, textvariable=self.utc_offset_var, 
+                                             values=["UTC+1", "UTC+2"], state="readonly", width=10)
+        self.utc_offset_combo.pack(side=tk.LEFT)
+        self.utc_offset_combo.bind("<<ComboboxSelected>>", self.on_utc_offset_change)
+        
+        ttk.Label(utc_row, text="(Change for Summer/Winter)", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5, 0))
         
         # Strategy phase tracking
         phase_frame = ttk.LabelFrame(parent, text="Strategy Phase Tracking", padding="5")
@@ -520,6 +542,52 @@ class AdvancedMT5TradingMonitorGUI:
         if symbols:
             self.symbol_combo.set(symbols[0])
             self.on_symbol_config_select(None)
+    
+    def load_utc_offset_from_config(self):
+        """Load UTC offset from config file"""
+        try:
+            config_file = os.path.join(os.path.dirname(__file__), 'config', 'broker_timezone.json')
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config_data = json.load(f)
+                    offset = config_data.get('utc_offset', 1)
+                    return offset
+        except Exception as e:
+            self.logger.warning(f"Could not load UTC offset from config: {e}")
+        
+        return 1  # Default: UTC+1
+    
+    def on_utc_offset_change(self, event=None):
+        """Handle UTC offset change from dropdown"""
+        offset_str = self.utc_offset_var.get()
+        if offset_str == "UTC+1":
+            self.broker_utc_offset = 1
+        elif offset_str == "UTC+2":
+            self.broker_utc_offset = 2
+        else:
+            self.broker_utc_offset = 1  # Default
+        
+        # Save to config file
+        try:
+            config_dir = os.path.join(os.path.dirname(__file__), 'config')
+            os.makedirs(config_dir, exist_ok=True)
+            config_file = os.path.join(config_dir, 'broker_timezone.json')
+            
+            config_data = {
+                "utc_offset": self.broker_utc_offset,
+                "description": "Broker timezone offset from UTC. Set to 1 for UTC+1 (winter), 2 for UTC+2 (summer)",
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            with open(config_file, 'w') as f:
+                json.dump(config_data, f, indent=4)
+                
+            self.terminal_log(f"🌍 Broker UTC Offset changed to: {offset_str}", "INFO", critical=True)
+            self.terminal_log(f"   → Saved to config/broker_timezone.json", "INFO", critical=True)
+            self.terminal_log(f"   → Time filter will convert broker time to UTC before checking", "INFO", critical=True)
+            self.terminal_log(f"   → Affects: EURUSD, AUDUSD, XAGUSD, USDCHF (assets with time filter enabled)", "INFO", critical=True)
+        except Exception as e:
+            self.terminal_log(f"❌ Failed to save UTC offset: {str(e)}", "ERROR", critical=True)
             
     def parse_strategy_config(self, file_path, symbol):
         """Parse strategy configuration from file"""

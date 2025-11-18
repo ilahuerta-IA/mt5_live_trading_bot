@@ -106,7 +106,7 @@ ANY FAILED → REJECTED (stay in SCANNING)
 
 **Impact:** Reduces entries from ~240/month to ~2-3/month per asset (matches backtesting)
 
-📊 **Filter Configuration:** [FILTER_CONFIGURATION.md](FILTER_CONFIGURATION.md)
+📊 **Filter Configuration:** [FILTER_CONFIGURATION.md](docs/archive/FILTER_CONFIGURATION.md)
 
 ---
 
@@ -133,7 +133,7 @@ ANY FAILED → REJECTED (stay in SCANNING)
 └─────────────────────────────────────────────────────────────┘
 ```
 
-📚 **Case Studies:** [COMPREHENSIVE_STRATEGY_VERIFICATION.md](COMPREHENSIVE_STRATEGY_VERIFICATION.md)
+📚 **Case Studies:** [COMPREHENSIVE_STRATEGY_VERIFICATION.md](docs/archive/COMPREHENSIVE_STRATEGY_VERIFICATION.md)
 
 ---
 
@@ -165,7 +165,7 @@ lot_size = risk_amount / (sl_distance × value_per_point)  ✅
 4. 🧮 Lot size calculation (step-by-step formula)
 5. ✅ Risk verification (confirms calculated risk matches expected)
 
-📖 **Technical Details:** [POSITION_SIZING_FIX_V2.md](POSITION_SIZING_FIX_V2.md)
+📖 **Technical Details:** [POSITION_SIZING_FIX_V2.md](docs/archive/POSITION_SIZING_FIX_V2.md)
 
 ---
 
@@ -182,7 +182,7 @@ lot_size = risk_amount / (sl_distance × value_per_point)  ✅
 - Created `_execute_entry()` method for immediate entries
 - Enhanced configuration logging at startup
 
-📖 **Full Analysis:** [PULLBACK_SYSTEM_FIX.md](PULLBACK_SYSTEM_FIX.md)
+📖 **Full Analysis:** [PULLBACK_SYSTEM_FIX.md](docs/PULLBACK_SYSTEM_FIX.md)
 
 ---
 
@@ -240,20 +240,20 @@ mt5_live_trading_bot/
 ### 🎯 Essential Reading (Start Here)
 
 1. **[DALIO_QUICK_REFERENCE.md](DALIO_QUICK_REFERENCE.md)** - Position sizing quick reference
-2. **[FILTER_CONFIGURATION.md](FILTER_CONFIGURATION.md)** - Entry filter matrix
+2. **[FILTER_CONFIGURATION.md](docs/archive/FILTER_CONFIGURATION.md)** - Entry filter matrix
 3. **[docs/START_TESTING_HERE.md](docs/START_TESTING_HERE.md)** - Testing guide
 
 ### 📖 Core Documentation
 
 4. **[DALIO_ALLOCATION_SYSTEM.md](DALIO_ALLOCATION_SYSTEM.md)** - Complete Ray Dalio implementation
-5. **[COMPREHENSIVE_STRATEGY_VERIFICATION.md](COMPREHENSIVE_STRATEGY_VERIFICATION.md)** - 1,500+ line verification (MT5 vs Backtrader)
+5. **[COMPREHENSIVE_STRATEGY_VERIFICATION.md](docs/archive/COMPREHENSIVE_STRATEGY_VERIFICATION.md)** - 1,500+ line verification (MT5 vs Backtrader)
 6. **[STRATEGY_FILES_POLICY.md](STRATEGY_FILES_POLICY.md)** - READ-ONLY policy for strategy files
 
 ### 🔧 Technical Documentation
 
-7. **[POSITION_SIZING_FIX_V2.md](POSITION_SIZING_FIX_V2.md)** - Position sizing fix (MT5 tick value integration)
-8. **[PULLBACK_SYSTEM_FIX.md](PULLBACK_SYSTEM_FIX.md)** - Pullback flag check implementation
-9. **[DEEP_STRATEGY_ANALYSIS_NOV14.md](DEEP_STRATEGY_ANALYSIS_NOV14.md)** - 25-page session analysis
+7. **[POSITION_SIZING_FIX_V2.md](docs/archive/POSITION_SIZING_FIX_V2.md)** - Position sizing fix (MT5 tick value integration)
+8. **[PULLBACK_SYSTEM_FIX.md](docs/PULLBACK_SYSTEM_FIX.md)** - Pullback flag check implementation
+9. **[DEEP_STRATEGY_ANALYSIS_NOV14.md](docs/DEEP_STRATEGY_ANALYSIS_NOV14.md)** - 25-page session analysis
 10. **[docs/](docs/)** - Additional guides (EMA setup, pullback fixes, etc.)
 
 ---

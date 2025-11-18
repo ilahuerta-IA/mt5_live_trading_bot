@@ -55,6 +55,7 @@ pyinstaller --onefile ^
     --noconsole ^
     --icon=NONE ^
     --add-data "strategies;strategies" ^
+    --add-data "config;config" ^
     --hidden-import=MetaTrader5 ^
     --hidden-import=pandas ^
     --hidden-import=numpy ^
