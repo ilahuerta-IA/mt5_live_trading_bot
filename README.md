@@ -192,7 +192,7 @@ lot_size = risk_amount / (sl_distance × value_per_point)  ✅
 
 **Impact:** Reduced entries from ~240/month to ~2-3/month per asset (matches backtesting)
 
-📖 **Details:** [docs/ATR_FILTER_FIX.md](docs/ATR_FILTER_FIX.md)
+📖 **Details:** [docs/ATR_BUG_FIX_COMPLETE.md](docs/ATR_BUG_FIX_COMPLETE.md)
 
 ---
 
