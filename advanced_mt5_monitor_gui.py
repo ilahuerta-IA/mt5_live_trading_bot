@@ -1313,6 +1313,9 @@ class AdvancedMT5TradingMonitorGUI:
         Checks if current time falls within allowed trading hours.
         Handles overnight windows (e.g., 23:00-16:00 UTC).
         
+        **UTC CONVERSION:** Converts broker Madrid time (UTC+1/UTC+2) to UTC before checking.
+        Reads UTC offset from config/utc_offset.json (set by GUI dropdown).
+        
         Returns:
             bool: True if time passes filter (or filter disabled), False otherwise
         """
@@ -1323,14 +1326,30 @@ class AdvancedMT5TradingMonitorGUI:
             if config.get('USE_TIME_RANGE_FILTER', 'False') not in ('True', True):
                 return True  # Filter disabled
             
-            # Get time range
+            # Get time range (these are in UTC)
             start_hour = int(config.get('ENTRY_START_HOUR', 0))
             start_min = int(config.get('ENTRY_START_MINUTE', 0))
             end_hour = int(config.get('ENTRY_END_HOUR', 23))
             end_min = int(config.get('ENTRY_END_MINUTE', 59))
             
-            # Convert to minutes since midnight
-            current_minutes = current_dt.hour * 60 + current_dt.minute
+            # Read UTC offset from config file (set by GUI)
+            utc_offset = 1  # Default: UTC+1 (winter time)
+            try:
+                import json
+                from pathlib import Path
+                config_file = Path("config") / "utc_offset.json"
+                if config_file.exists():
+                    with open(config_file, 'r') as f:
+                        utc_config = json.load(f)
+                        utc_offset = utc_config.get('utc_offset', 1)
+            except Exception:
+                utc_offset = 1  # Fallback to default
+            
+            # Convert broker time (Madrid UTC+1/UTC+2) to UTC
+            utc_hour = (current_dt.hour - utc_offset) % 24
+            
+            # Convert to minutes since midnight (now in UTC)
+            current_minutes = utc_hour * 60 + current_dt.minute
             start_minutes = start_hour * 60 + start_min
             end_minutes = end_hour * 60 + end_min
             
@@ -1577,12 +1596,8 @@ class AdvancedMT5TradingMonitorGUI:
                 if not ema_order_passed:
                     all_filters_passed = False
                 
-                # 6. Time Filter
-                time_passed = self._validate_time_filter(symbol, current_dt, 'LONG')
-                self.terminal_log(f"   ⏰ {symbol}: Time filter → {'✅ PASS' if time_passed else '❌ FAIL'}", 
-                                "DEBUG", critical=True)
-                if not time_passed:
-                    all_filters_passed = False
+                # NOTE: Time filter is NOT checked here (matches original strategy)
+                # Time filter is only validated at BREAKOUT/ENTRY execution (Phase 4)
                 
                 # Final decision
                 if all_filters_passed:
@@ -2441,9 +2456,20 @@ class AdvancedMT5TradingMonitorGUI:
                         self.terminal_log(f"✅ {symbol}: BREAKOUT detected - Entry conditions met! Price: {current_close:.{digits}f}", 
                                         "SUCCESS", critical=True)
                         
-                        # Execute trade in MT5 at close price (backtrader behavior)
-                        entry_price = current_close
-                        trade_executed = self.execute_trade(symbol, armed_direction, entry_price, config)
+                        # ⏰ CRITICAL: Validate time filter before entry (matches original strategy Line 1381)
+                        current_dt = df.index[-1]
+                        time_filter_passed = self._validate_time_filter(symbol, current_dt, armed_direction)
+                        
+                        if not time_filter_passed:
+                            self.terminal_log(f"🚫 {symbol}: ENTRY BLOCKED - Breakout detected outside trading hours", 
+                                            "WARNING", critical=True)
+                            self._reset_entry_state(symbol)
+                            entry_state = 'SCANNING'
+                            trade_executed = False
+                        else:
+                            # Execute trade in MT5 at close price (backtrader behavior)
+                            entry_price = current_close
+                            trade_executed = self.execute_trade(symbol, armed_direction, entry_price, config)
                     
                     if trade_executed:
                         self.terminal_log(f"🎯 {symbol}: Trade executed successfully!", "SUCCESS", critical=True)
