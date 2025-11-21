@@ -82,7 +82,7 @@ dist\MT5_Trading_Bot.exe
 
 **Key Benefit:** Maximum 1% total portfolio risk even if all 6 assets signal simultaneously (vs 6% with equal weighting)
 
-📖 **Full Documentation:** [DALIO_ALLOCATION_SYSTEM.md](DALIO_ALLOCATION_SYSTEM.md)
+📖 **Full Documentation:** [DALIO_ALLOCATION_SYSTEM.md](docs/DALIO_ALLOCATION_SYSTEM.md)
 
 ---
 
@@ -199,7 +199,7 @@ lot_size = risk_amount / (sl_distance × value_per_point)  ✅
 
 **Impact:** Reduced entries from ~240/month to ~2-3/month per asset (matches backtesting)
 
-📖 **Details:** [docs/ATR_BUG_FIX_COMPLETE.md](docs/ATR_BUG_FIX_COMPLETE.md)
+📖 **Details:** [ATR_BUG_FIX_COMPLETE.md](docs/ATR_BUG_FIX_COMPLETE.md)
 
 ---
 
@@ -246,15 +246,15 @@ mt5_live_trading_bot/
 
 ### 🎯 Essential Reading (Start Here)
 
-1. **[DALIO_QUICK_REFERENCE.md](DALIO_QUICK_REFERENCE.md)** - Position sizing quick reference
+1. **[DALIO_QUICK_REFERENCE.md](docs/DALIO_QUICK_REFERENCE.md)** - Position sizing quick reference
 2. **[FILTER_CONFIGURATION.md](docs/archive/FILTER_CONFIGURATION.md)** - Entry filter matrix
 3. **[START_TESTING_HERE.md](docs/START_TESTING_HERE.md)** - Testing guide
 
 ### 📖 Core Documentation
 
-4. **[DALIO_ALLOCATION_SYSTEM.md](DALIO_ALLOCATION_SYSTEM.md)** - Complete Ray Dalio implementation
+4. **[DALIO_ALLOCATION_SYSTEM.md](docs/DALIO_ALLOCATION_SYSTEM.md)** - Complete Ray Dalio implementation
 5. **[COMPREHENSIVE_STRATEGY_VERIFICATION.md](docs/archive/COMPREHENSIVE_STRATEGY_VERIFICATION.md)** - 1,500+ line verification (MT5 vs Backtrader)
-6. **[STRATEGY_FILES_POLICY.md](STRATEGY_FILES_POLICY.md)** - READ-ONLY policy for strategy files
+6. **[STRATEGY_FILES_POLICY.md](docs/STRATEGY_FILES_POLICY.md)** - READ-ONLY policy for strategy files
 
 ### 🔧 Technical Documentation
 
@@ -317,7 +317,7 @@ Each strategy file in `strategies/` contains:
 - Trading hours (UTC)
 - Filter thresholds (ATR, Angle, etc.)
 
-**⚠️ IMPORTANT:** Strategy files are **READ-ONLY** to preserve backtesting integrity. See [STRATEGY_FILES_POLICY.md](STRATEGY_FILES_POLICY.md)
+**⚠️ IMPORTANT:** Strategy files are **READ-ONLY** to preserve backtesting integrity. See [STRATEGY_FILES_POLICY.md](docs/STRATEGY_FILES_POLICY.md)
 
 ---
 
@@ -399,7 +399,7 @@ Contributions welcome! Please:
 
 1. Fork the repository
 2. Create feature branch (`git checkout -b feature/AmazingFeature`)
-3. **Read [STRATEGY_FILES_POLICY.md](STRATEGY_FILES_POLICY.md)** - Strategy files are READ-ONLY
+3. **Read [STRATEGY_FILES_POLICY.md](docs/STRATEGY_FILES_POLICY.md)** - Strategy files are READ-ONLY
 4. Test on demo account thoroughly
 5. Document changes and include test results
 6. Submit Pull Request
