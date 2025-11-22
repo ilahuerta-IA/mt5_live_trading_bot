@@ -201,8 +201,11 @@ Currently **DISABLED** for all assets to allow more entry opportunities.
 
 ## 📈 Filter Validation Logic
 
-All filters are checked **independently** for every crossover:
+Filters are applied in two stages:
+1. **Crossover Filters:** Checked immediately upon EMA crossover (Phase 1) to determine if the signal should be ARMED.
+2. **Entry Filters:** Checked immediately before trade execution (Phase 4) to ensure conditions are still valid.
 
+**Stage 1: Crossover Validation (Phase 1 -> Phase 2)**
 ```python
 if bullish_crossover and not crossover_is_stale:
     all_filters_passed = True
@@ -232,16 +235,24 @@ if bullish_crossover and not crossover_is_stale:
     if not ema_passed:
         all_filters_passed = False
     
-    # 6. Time Range (if enabled)
-    time_passed = validate_time_filter(symbol, 'LONG')
-    if not time_passed:
-        all_filters_passed = False
-    
-    # ARM signal only if ALL filters pass
+    # ARM signal only if ALL crossover filters pass
     if all_filters_passed:
         arm_signal(symbol, 'LONG')
     else:
         reject_signal(symbol, 'LONG')
+```
+
+**Stage 2: Entry Validation (Phase 4 -> Entry)**
+```python
+# In WINDOW_OPEN state, when price breaks out:
+if breakout_detected:
+    # 6. Time Range (if enabled) - CHECKED ONLY AT ENTRY
+    time_passed = validate_time_filter(symbol, 'LONG')
+    
+    if time_passed:
+        execute_trade(symbol, 'LONG')
+    else:
+        log("Time filter failed at entry - Trade Skipped")
 ```
 
 **Log Output Format:**

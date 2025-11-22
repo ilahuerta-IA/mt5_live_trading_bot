@@ -266,7 +266,7 @@ class AdvancedMT5TradingMonitorGUI:
         self.utc_offset_var = tk.StringVar(value=initial_offset)
         self.utc_offset_combo = ttk.Combobox(utc_row, textvariable=self.utc_offset_var, 
                                              values=["UTC+1", "UTC+2"], state="readonly", width=10)
-        self.utc_offset_combo.pack(side=tk.LEFT)
+        self.utc_offset_combo.pack(side=tk.LEFT, padx=(5, 10))
         self.utc_offset_combo.bind("<<ComboboxSelected>>", self.on_utc_offset_change)
         
         ttk.Label(utc_row, text="(Change for Summer/Winter)", font=("Arial", 8)).pack(side=tk.LEFT, padx=(5, 0))
@@ -637,11 +637,37 @@ class AdvancedMT5TradingMonitorGUI:
             'LONG_MIN_ANGLE': 'Min EMA Angle (degrees)',
             'LONG_MAX_ANGLE': 'Max EMA Angle (degrees)',
             'LONG_ANGLE_SCALE_FACTOR': 'Angle Scale Factor',
+            'LONG_USE_EMA_BELOW_PRICE_FILTER': 'Use EMA Below Price Filter',
+            
+            # SHORT ATR Filters
+            'SHORT_USE_ATR_FILTER': 'Short Use ATR Volatility Filter',
+            'SHORT_ATR_MIN_THRESHOLD': 'Short ATR Min Threshold',
+            'SHORT_ATR_MAX_THRESHOLD': 'Short ATR Max Threshold',
+            'SHORT_USE_ATR_INCREMENT_FILTER': 'Short Use ATR Increment Filter',
+            'SHORT_ATR_INCREMENT_MIN_THRESHOLD': 'Short ATR Increment Min',
+            'SHORT_ATR_INCREMENT_MAX_THRESHOLD': 'Short ATR Increment Max',
+            'SHORT_USE_ATR_DECREMENT_FILTER': 'Short Use ATR Decrement Filter',
+            'SHORT_ATR_DECREMENT_MIN_THRESHOLD': 'Short ATR Decrement Min',
+            'SHORT_ATR_DECREMENT_MAX_THRESHOLD': 'Short ATR Decrement Max',
+            
+            # SHORT Entry Filters
+            'SHORT_USE_EMA_ORDER_CONDITION': 'Short Use EMA Order Condition',
+            'SHORT_USE_PRICE_FILTER_EMA': 'Short Use Price Filter EMA',
+            'SHORT_USE_CANDLE_DIRECTION_FILTER': 'Short Use Candle Direction Filter',
+            'SHORT_USE_ANGLE_FILTER': 'Short Use EMA Angle Filter',
+            'SHORT_MIN_ANGLE': 'Short Min EMA Angle (degrees)',
+            'SHORT_MAX_ANGLE': 'Short Max EMA Angle (degrees)',
+            'SHORT_ANGLE_SCALE_FACTOR': 'Short Angle Scale Factor',
+            'SHORT_USE_EMA_ABOVE_PRICE_FILTER': 'Short Use EMA Above Price Filter',
             
             # Pullback Entry System
             'LONG_USE_PULLBACK_ENTRY': 'Use Pullback Entry System',
             'LONG_PULLBACK_MAX_CANDLES': 'Max Pullback Candles',
             'LONG_ENTRY_WINDOW_PERIODS': 'Entry Window Periods',
+            'SHORT_USE_PULLBACK_ENTRY': 'Short Use Pullback Entry System',
+            'SHORT_PULLBACK_MAX_CANDLES': 'Short Max Pullback Candles',
+            'SHORT_ENTRY_WINDOW_PERIODS': 'Short Entry Window Periods',
+            
             'WINDOW_OFFSET_MULTIPLIER': 'Window Offset Multiplier',
             'USE_WINDOW_TIME_OFFSET': 'Use Window Time Offset',
             'WINDOW_PRICE_OFFSET_MULTIPLIER': 'Window Price Offset',
@@ -1049,7 +1075,7 @@ class AdvancedMT5TradingMonitorGUI:
             filter_key = f'{direction}_USE_ATR_FILTER'
             filter_enabled = config.get(filter_key, 'False')
             
-            if filter_enabled not in ('True', True, 1, '1'):
+            if not self.extract_bool_value(filter_enabled):
                 return True  # Filter disabled
             
             # Get current ATR
@@ -1071,36 +1097,57 @@ class AdvancedMT5TradingMonitorGUI:
                 return False
             
             # Check ATR increment/decrement filters
-            if len(df) >= 2:
+            # ⚠️ CRITICAL FIX: Calculate change from SIGNAL DETECTION, not previous bar
+            # Matches strategy logic: self.entry_atr_increment = current_atr - self.signal_detection_atr
+            
+            state = self.strategy_states.get(symbol, {})
+            signal_atr = state.get('signal_detection_atr')
+            
+            atr_change = 0.0
+            has_valid_change = False
+            
+            if signal_atr is not None and signal_atr > 0:
+                # Correct calculation: Change since signal detection (Phase 1)
+                atr_change = current_atr - signal_atr
+                has_valid_change = True
+            elif len(df) >= 2:
+                # Fallback: 1-bar change (only if signal ATR missing, e.g. after restart)
                 prev_atr = df['atr'].iloc[-2]
                 if not pd.isna(prev_atr) and prev_atr > 0:
                     atr_change = current_atr - prev_atr
+                    has_valid_change = True
+                    self.terminal_log(f"⚠️ {symbol}: Using 1-bar ATR change (Signal ATR missing)", "DEBUG")
+            
+            if has_valid_change:
+                # Increment filter (positive changes)
+                incr_key = f'{direction}_USE_ATR_INCREMENT_FILTER'
+                if self.extract_bool_value(config.get(incr_key, 'False')) and atr_change >= 0:
+                    min_incr = float(config.get(f'{direction}_ATR_INCREMENT_MIN_THRESHOLD', 0.0))
+                    max_incr = float(config.get(f'{direction}_ATR_INCREMENT_MAX_THRESHOLD', 999.0))
                     
-                    # Increment filter (positive changes)
-                    incr_key = f'{direction}_USE_ATR_INCREMENT_FILTER'
-                    if config.get(incr_key, 'False') in ('True', True) and atr_change >= 0:
-                        min_incr = float(config.get(f'{direction}_ATR_INCREMENT_MIN_THRESHOLD', 0.0))
-                        max_incr = float(config.get(f'{direction}_ATR_INCREMENT_MAX_THRESHOLD', 999.0))
-                        
-                        if atr_change < min_incr or atr_change > max_incr:
-                            self.terminal_log(
-                                f"❌ {symbol} {direction}: ATR increment {atr_change:+.6f} outside range [{min_incr:.6f}, {max_incr:.6f}]", 
-                                "WARNING", critical=True
-                            )
-                            return False
+                    if atr_change < min_incr or atr_change > max_incr:
+                        self.terminal_log(
+                            f"❌ {symbol} {direction}: ATR increment {atr_change:+.6f} outside range [{min_incr:.6f}, {max_incr:.6f}]", 
+                            "WARNING", critical=True
+                        )
+                        return False
+                    else:
+                        self.terminal_log(f"✅ {symbol} {direction}: ATR increment {atr_change:+.6f} OK [{min_incr:.6f}, {max_incr:.6f}]", "INFO")
+                
+                # Decrement filter (negative changes)
+                decr_key = f'{direction}_USE_ATR_DECREMENT_FILTER'
+                if self.extract_bool_value(config.get(decr_key, 'False')) and atr_change < 0:
+                    min_decr = float(config.get(f'{direction}_ATR_DECREMENT_MIN_THRESHOLD', -999.0))
+                    max_decr = float(config.get(f'{direction}_ATR_DECREMENT_MAX_THRESHOLD', 0.0))
                     
-                    # Decrement filter (negative changes)
-                    decr_key = f'{direction}_USE_ATR_DECREMENT_FILTER'
-                    if config.get(decr_key, 'False') in ('True', True) and atr_change < 0:
-                        min_decr = float(config.get(f'{direction}_ATR_DECREMENT_MIN_THRESHOLD', -999.0))
-                        max_decr = float(config.get(f'{direction}_ATR_DECREMENT_MAX_THRESHOLD', 0.0))
-                        
-                        if atr_change < min_decr or atr_change > max_decr:
-                            self.terminal_log(
-                                f"❌ {symbol} {direction}: ATR decrement {atr_change:+.6f} outside range [{min_decr:.6f}, {max_decr:.6f}]", 
-                                "WARNING", critical=True
-                            )
-                            return False
+                    if atr_change < min_decr or atr_change > max_decr:
+                        self.terminal_log(
+                            f"❌ {symbol} {direction}: ATR decrement {atr_change:+.6f} outside range [{min_decr:.6f}, {max_decr:.6f}]", 
+                            "WARNING", critical=True
+                        )
+                        return False
+                    else:
+                        self.terminal_log(f"✅ {symbol} {direction}: ATR decrement {atr_change:+.6f} OK [{min_decr:.6f}, {max_decr:.6f}]", "INFO")
             
             return True
             
@@ -1125,7 +1172,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Check if angle filter enabled
             filter_key = f'{direction}_USE_ANGLE_FILTER'
-            if config.get(filter_key, 'False') not in ('True', True):
+            if not self.extract_bool_value(config.get(filter_key, 'False')):
                 return True  # Filter disabled
             
             # Calculate EMA confirm (1-period = close price)
@@ -1182,7 +1229,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Check if price filter enabled
             filter_key = f'{direction}_USE_PRICE_FILTER_EMA'
-            if config.get(filter_key, 'False') not in ('True', True):
+            if not self.extract_bool_value(config.get(filter_key, 'False')):
                 return True  # Filter disabled
             
             # Get filter EMA period
@@ -1238,7 +1285,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Check if candle direction filter enabled
             filter_key = f'{direction}_USE_CANDLE_DIRECTION_FILTER'
-            if config.get(filter_key, 'False') not in ('True', True):
+            if not self.extract_bool_value(config.get(filter_key, 'False')):
                 return True  # Filter disabled
             
             # Get previous candle (last closed candle)
@@ -1282,7 +1329,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Check if EMA ordering filter enabled
             filter_key = f'{direction}_USE_EMA_ORDER_CONDITION'
-            if config.get(filter_key, 'False') not in ('True', True):
+            if not self.extract_bool_value(config.get(filter_key, 'False')):
                 return True  # Filter disabled
             
             # Validate based on direction
@@ -1293,6 +1340,8 @@ class AdvancedMT5TradingMonitorGUI:
                         "WARNING", critical=True
                     )
                     return False
+                else:
+                    self.terminal_log(f"✅ {symbol} LONG: EMA ordering OK", "INFO")
             elif direction == 'SHORT':
                 if not (ema_confirm < ema_fast and ema_fast < ema_medium and ema_medium < ema_slow):
                     self.terminal_log(
@@ -1300,6 +1349,8 @@ class AdvancedMT5TradingMonitorGUI:
                         "WARNING", critical=True
                     )
                     return False
+                else:
+                    self.terminal_log(f"✅ {symbol} SHORT: EMA ordering OK", "INFO")
             
             return True
             
@@ -1307,6 +1358,62 @@ class AdvancedMT5TradingMonitorGUI:
             self.terminal_log(f"⚠️ {symbol}: EMA ordering filter error: {str(e)}", "WARNING")
             return True  # On error, allow to pass (fail-safe)
     
+    def _validate_ema_position_filter(self, symbol, df, ema_fast, ema_medium, ema_slow, direction='LONG'):
+        """Validate EMA position relative to price - UNIVERSAL for all assets
+        
+        Checks if EMAs are on the correct side of price.
+        LONG: Price > Fast, Medium, Slow EMAs
+        SHORT: Price < Fast, Medium, Slow EMAs
+        
+        Returns:
+            bool: True if position passes filter (or filter disabled), False otherwise
+        """
+        if df is None or len(df) < 1:
+            return True  # Not enough data, allow to pass
+            
+        try:
+            config = self.strategy_configs.get(symbol, {})
+            current_close = df['close'].iloc[-1]
+            
+            # Validate based on direction
+            if direction == 'LONG':
+                # Check if filter enabled
+                if not self.extract_bool_value(config.get('LONG_USE_EMA_BELOW_PRICE_FILTER', 'False')):
+                    return True
+                    
+                # Check if Price is ABOVE all EMAs
+                if current_close > ema_fast and current_close > ema_medium and current_close > ema_slow:
+                    self.terminal_log(f"✅ {symbol} LONG: Price {current_close:.5f} > All EMAs", "INFO")
+                    return True
+                else:
+                    self.terminal_log(
+                        f"❌ {symbol} LONG: Price {current_close:.5f} not above all EMAs (F:{ema_fast:.5f}, M:{ema_medium:.5f}, S:{ema_slow:.5f})", 
+                        "WARNING", critical=True
+                    )
+                    return False
+                    
+            elif direction == 'SHORT':
+                # Check if filter enabled
+                if not self.extract_bool_value(config.get('SHORT_USE_EMA_ABOVE_PRICE_FILTER', 'False')):
+                    return True
+                    
+                # Check if Price is BELOW all EMAs
+                if current_close < ema_fast and current_close < ema_medium and current_close < ema_slow:
+                    self.terminal_log(f"✅ {symbol} SHORT: Price {current_close:.5f} < All EMAs", "INFO")
+                    return True
+                else:
+                    self.terminal_log(
+                        f"❌ {symbol} SHORT: Price {current_close:.5f} not below all EMAs (F:{ema_fast:.5f}, M:{ema_medium:.5f}, S:{ema_slow:.5f})", 
+                        "WARNING", critical=True
+                    )
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.terminal_log(f"⚠️ {symbol}: EMA position filter error: {str(e)}", "WARNING")
+            return True  # On error, allow to pass (fail-safe)
+
     def _validate_time_filter(self, symbol, current_dt, direction='LONG'):
         """Validate trading time window - UNIVERSAL for all assets
         
@@ -1337,7 +1444,7 @@ class AdvancedMT5TradingMonitorGUI:
             try:
                 import json
                 from pathlib import Path
-                config_file = Path("config") / "utc_offset.json"
+                config_file = Path("config") / "broker_timezone.json"
                 if config_file.exists():
                     with open(config_file, 'r') as f:
                         utc_config = json.load(f)
@@ -1596,6 +1703,13 @@ class AdvancedMT5TradingMonitorGUI:
                 if not ema_order_passed:
                     all_filters_passed = False
                 
+                # 6. EMA Position (new filter)
+                ema_position_passed = self._validate_ema_position_filter(symbol, df_closed, fast_ema, medium_ema, slow_ema, 'LONG')
+                self.terminal_log(f"   📏 {symbol}: EMA Position → {'✅ PASS' if ema_position_passed else '❌ FAIL'}", 
+                                "DEBUG", critical=True)
+                if not ema_position_passed:
+                    all_filters_passed = False
+                
                 # NOTE: Time filter is NOT checked here (matches original strategy)
                 # Time filter is only validated at BREAKOUT/ENTRY execution (Phase 4)
                 
@@ -1611,6 +1725,7 @@ class AdvancedMT5TradingMonitorGUI:
             # ===================================================================
             # CRITICAL: BEARISH CROSSOVER HANDLING
             # ===================================================================
+
             # ⚠️ IMPORTANT: We preserve bearish_crossover for GLOBAL INVALIDATION
             # (to reset ARMED_LONG states) but log that SHORTS are disabled
             if bearish_crossover:
@@ -1785,7 +1900,7 @@ class AdvancedMT5TradingMonitorGUI:
             if match:
                 return int(float(match.group(1)))  # Convert to int for periods
         return 18  # Default fallback
-        
+    
     def extract_float_value(self, value_str):
         """Extract float value from configuration string (for multipliers)"""
         if isinstance(value_str, (int, float)):
@@ -1797,6 +1912,16 @@ class AdvancedMT5TradingMonitorGUI:
             if match:
                 return float(match.group(1))
         return 1.5  # Default fallback
+    
+    def extract_bool_value(self, value):
+        """Extract boolean value from configuration string"""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        return False
     
     def _is_in_trading_time_range(self, dt, config):
         """Check if current time is within trading hours (matching original strategy)"""
@@ -1813,8 +1938,27 @@ class AdvancedMT5TradingMonitorGUI:
         end_hour = int(config.get('ENTRY_END_HOUR', 23))
         end_minute = int(config.get('ENTRY_END_MINUTE', 59))
         
+        # Read UTC offset from config file (set by GUI)
+        utc_offset = 1  # Default: UTC+1 (winter time)
+        try:
+            import json
+            from pathlib import Path
+            config_file = Path("config") / "broker_timezone.json"
+            if config_file.exists():
+                with open(config_file, 'r') as f:
+                    utc_config = json.load(f)
+                    utc_offset = utc_config.get('utc_offset', 1)
+        except Exception:
+            utc_offset = 1  # Fallback to default
+        
+        # Convert broker time (Madrid UTC+1/UTC+2) to UTC
+        if not hasattr(dt, 'hour'):
+            return True
+            
+        utc_hour = (dt.hour - utc_offset) % 24
+        
         # Convert to minutes for comparison
-        current_time_minutes = dt.hour * 60 + dt.minute
+        current_time_minutes = utc_hour * 60 + dt.minute
         start_time_minutes = start_hour * 60 + start_minute
         end_time_minutes = end_hour * 60 + end_minute
         
@@ -2022,7 +2166,6 @@ class AdvancedMT5TradingMonitorGUI:
                                 "INFO", critical=True)
                 self._reset_entry_state(symbol)
                 entry_state = 'SCANNING'
-                current_state['entry_state'] = 'SCANNING'
             else:
                 # Position still open - Skip all processing
                 self.terminal_log(f"🔒 {symbol}: Position still open (Ticket #{positions[0].ticket}) - Skipping signal detection", 
@@ -2037,7 +2180,7 @@ class AdvancedMT5TradingMonitorGUI:
         # Bar counter - only increment on NEW CANDLE (matches original strategy Line 1393: current_bar = len(self))
         # Track candle timestamp to detect new candles
         if len(df) > 0:
-            current_candle_time = df.index[-1]
+            current_candle_time = df['time'].iloc[-1]
             
             # Check if this is a new candle (timestamp changed)
             if 'last_candle_time' not in current_state or current_state['last_candle_time'] != current_candle_time:
@@ -2048,7 +2191,8 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Get current time for time filter
         if len(df) > 0:
-            current_dt = df.index[-1] if isinstance(df.index[-1], datetime) else datetime.now()
+            # Use the time column which contains datetime objects
+            current_dt = df['time'].iloc[-1]
         else:
             current_dt = datetime.now()
         
@@ -2150,6 +2294,12 @@ class AdvancedMT5TradingMonitorGUI:
                         current_state['armed_direction'] = signal_direction
                         current_state['pullback_candle_count'] = 0
                         
+                        # Store signal detection ATR for increment/decrement filters (Matches strategy logic)
+                        if 'atr' in indicators and len(indicators['atr']) > 0:
+                            current_state['signal_detection_atr'] = float(indicators['atr'].iloc[-1])
+                        else:
+                            current_state['signal_detection_atr'] = None
+                        
                         # Store trigger candle (using last closed candle from dataframe)
                         # ⚠️ CRITICAL: df already has forming candle removed at line 747!
                         # Use iloc[-1] for the CURRENT closed candle that triggered the crossover
@@ -2248,7 +2398,7 @@ class AdvancedMT5TradingMonitorGUI:
                                 self.terminal_log(f"  📊 Gap at {gap_time}: {gap_size:.0f} min", "WARNING", critical=True)
                     
                     # Get the LAST CLOSED candle TIMESTAMP (df already excludes forming candle)
-                    # ✅ FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
+                    # ✅ FIX: Use 'time' column, NOT df.index
                     last_closed_candle_time = df['time'].iloc[-1] if len(df) > 0 else None
                     
                     # ✅ DIAGNOSTIC: Log the candle being checked
@@ -2257,10 +2407,10 @@ class AdvancedMT5TradingMonitorGUI:
                                     "DEBUG", critical=True)
                     
                     # 🛡️ BULLETPROOF CANDLE DETECTION - NEVER MISS A CANDLE
-                    candles_to_check = []
-                    
                     # Strategy: ALWAYS check for gaps, not just when time_diff > 5
                     # Use DataFrame filtering to get ALL unprocessed candles
+                    
+                    candles_to_check = []
                     
                     if last_checked == 'NONE' or not isinstance(last_checked, pd.Timestamp):
                         # First time checking - start from latest closed candle
@@ -2327,8 +2477,10 @@ class AdvancedMT5TradingMonitorGUI:
                         max_candles = 2  # Default
                         if armed_direction == 'LONG':
                             max_candles = int(config.get('LONG_PULLBACK_MAX_CANDLES', 2))
+                            pullback_type = "BEARISH (Red)"
                         else:
                             max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
+                            pullback_type = "BULLISH (Green)"
                         
                         # 🔄 PROCESS ALL CANDLES IN SEQUENCE (handles gaps)
                         for idx, candle_row in candles_to_check.iterrows():
@@ -2453,11 +2605,81 @@ class AdvancedMT5TradingMonitorGUI:
                         current_close = float(df['close'].iloc[-1])
                         digits = current_state.get('digits', 5)
                         
-                        self.terminal_log(f"✅ {symbol}: BREAKOUT detected - Entry conditions met! Price: {current_close:.{digits}f}", 
+                        self.terminal_log(f"✅ {symbol}: BREAKOUT detected - Validating entry conditions...", 
+                                        "INFO", critical=True)
+                        
+                        # 1. RE-CALCULATE INDICATORS for fresh validation (Angle, Price vs EMA, etc.)
+                        # Cached indicators are from window open time, we need CURRENT values
+                        fresh_indicators = self.calculate_indicators(df, symbol)
+                        
+                        # 2. VALIDATE ALL FILTERS AGAIN (Strategy Phase 4 Validation)
+                        # We must ensure market conditions are still valid for entry
+                        all_filters_passed = True
+                        
+                        # Add ATR to df for validation functions
+                        df_validation = df.copy()
+                        if 'atr' in fresh_indicators:
+                            df_validation['atr'] = fresh_indicators['atr']
+                            
+                        # Extract fresh EMAs
+                        fresh_fast = fresh_indicators.get('ema_fast', 0)
+                        fresh_medium = fresh_indicators.get('ema_medium', 0)
+                        fresh_slow = fresh_indicators.get('ema_slow', 0)
+                        fresh_confirm = fresh_indicators.get('ema_confirm', 0)
+                        
+                        # Validate Angle
+                        if not self._validate_angle_filter(symbol, df_validation, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by Angle Filter", "WARNING", critical=True)
+                            all_filters_passed = False
+                            
+                        # Validate Price Filter
+                        if all_filters_passed and not self._validate_price_filter(symbol, df_validation, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by Price Filter", "WARNING", critical=True)
+                            all_filters_passed = False
+                            
+                        # Validate EMA Ordering
+                        if all_filters_passed and not self._validate_ema_ordering(symbol, fresh_confirm, fresh_fast, fresh_medium, fresh_slow, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Ordering", "WARNING", critical=True)
+                            all_filters_passed = False
+                        
+                        # Validate EMA Position
+                        if all_filters_passed and not self._validate_ema_position_filter(symbol, df_validation, fresh_fast, fresh_medium, fresh_slow, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Position Filter", "WARNING", critical=True)
+                            all_filters_passed = False
+                            
+                        # Validate ATR Filter
+                        if all_filters_passed and not self._validate_atr_filter(symbol, df_validation, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by ATR Filter", "WARNING", critical=True)
+                            all_filters_passed = False
+                            
+                        # 3. VALIDATE TRIGGER CANDLE (Original Signal)
+                        # Ensure the original signal candle is still valid (e.g. body size, direction)
+                        trigger_candle = current_state.get('signal_trigger_candle')
+                        if all_filters_passed and trigger_candle:
+                            # Check candle direction filter against ORIGINAL trigger candle
+                            use_candle_filter = config.get(f'{armed_direction}_USE_CANDLE_DIRECTION_FILTER', 'False')
+                            if use_candle_filter in ('True', True, 1, '1'):
+                                is_valid_direction = False
+                                if armed_direction == 'LONG':
+                                    is_valid_direction = trigger_candle['is_bullish']
+                                else:
+                                    is_valid_direction = trigger_candle['is_bearish']
+                                    
+                                if not is_valid_direction:
+                                    self.terminal_log(f"❌ {symbol}: Entry blocked - Original trigger candle direction invalid", "WARNING", critical=True)
+                                    all_filters_passed = False
+                        
+                        if not all_filters_passed:
+                            self.terminal_log(f"⛔ {symbol}: ENTRY ABORTED - Filters failed at breakout time", "WARNING", critical=True)
+                            self._reset_entry_state(symbol)
+                            entry_state = 'SCANNING'
+                            return entry_state
+
+                        self.terminal_log(f"✅ {symbol}: All entry filters PASSED. Price: {current_close:.{digits}f}", 
                                         "SUCCESS", critical=True)
                         
                         # ⏰ CRITICAL: Validate time filter before entry (matches original strategy Line 1381)
-                        current_dt = df.index[-1]
+                        current_dt = df['time'].iloc[-1] if len(df) > 0 else datetime.now()
                         time_filter_passed = self._validate_time_filter(symbol, current_dt, armed_direction)
                         
                         if not time_filter_passed:
@@ -2510,7 +2732,7 @@ class AdvancedMT5TradingMonitorGUI:
             current_state['last_update'] = datetime.now()
             
         except Exception as e:
-            self.terminal_log(f"❌ {symbol}: Phase determination error: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"❌ Phase determination error: {str(e)}", "ERROR", critical=True)
             import traceback
             traceback.print_exc()
         
@@ -2689,22 +2911,48 @@ class AdvancedMT5TradingMonitorGUI:
             if 'True' in str(use_atr_filter):
                 min_atr = config.get('ATR Min Threshold', 'N/A')
                 max_atr = config.get('ATR Max Threshold', 'N/A')
-                display_text += f"ATR Filter: ENABLED ({min_atr} - {max_atr})\n"
+                display_text += f"LONG ATR Filter: ENABLED ({min_atr} - {max_atr})\n"
             else:
-                display_text += f"ATR Filter: DISABLED\n"
+                display_text += f"LONG ATR Filter: DISABLED\n"
+                
+            use_short_atr_filter = config.get('Short Use ATR Volatility Filter', 'False')
+            if 'True' in str(use_short_atr_filter):
+                min_atr = config.get('Short ATR Min Threshold', 'N/A')
+                max_atr = config.get('Short ATR Max Threshold', 'N/A')
+                display_text += f"SHORT ATR Filter: ENABLED ({min_atr} - {max_atr})\n"
+            else:
+                display_text += f"SHORT ATR Filter: DISABLED\n"
                 
             # Angle Filter
             use_angle_filter = config.get('Use EMA Angle Filter', 'False')
             if 'True' in str(use_angle_filter):
                 min_angle = config.get('Min EMA Angle (degrees)', 'N/A')
                 max_angle = config.get('Max EMA Angle (degrees)', 'N/A')
-                display_text += f"EMA Angle Filter: ENABLED ({min_angle}° - {max_angle}°)\n"
+                display_text += f"LONG Angle Filter: ENABLED ({min_angle}° - {max_angle}°)\n"
             else:
-                display_text += f"EMA Angle Filter: DISABLED\n"
+                display_text += f"LONG Angle Filter: DISABLED\n"
+                
+            use_short_angle_filter = config.get('Short Use EMA Angle Filter', 'False')
+            if 'True' in str(use_short_angle_filter):
+                min_angle = config.get('Short Min EMA Angle (degrees)', 'N/A')
+                max_angle = config.get('Short Max EMA Angle (degrees)', 'N/A')
+                display_text += f"SHORT Angle Filter: ENABLED ({min_angle}° - {max_angle}°)\n"
+            else:
+                display_text += f"SHORT Angle Filter: DISABLED\n"
                 
             # Price Filter
             use_price_filter = config.get('Use Price Filter EMA', 'False')
-            display_text += f"Price Filter EMA: {'ENABLED' if 'True' in str(use_price_filter) else 'DISABLED'}\n"
+            display_text += f"LONG Price Filter: {'ENABLED' if 'True' in str(use_price_filter) else 'DISABLED'}\n"
+            
+            use_short_price_filter = config.get('Short Use Price Filter EMA', 'False')
+            display_text += f"SHORT Price Filter: {'ENABLED' if 'True' in str(use_short_price_filter) else 'DISABLED'}\n"
+            
+            # EMA Position Filter
+            use_ema_pos_filter = config.get('Use EMA Below Price Filter', 'False')
+            display_text += f"LONG EMA Position Filter: {'ENABLED' if 'True' in str(use_ema_pos_filter) else 'DISABLED'}\n"
+            
+            use_short_ema_pos_filter = config.get('Short Use EMA Above Price Filter', 'False')
+            display_text += f"SHORT EMA Position Filter: {'ENABLED' if 'True' in str(use_short_ema_pos_filter) else 'DISABLED'}\n"
             
             display_text += "\n"
             
@@ -2869,7 +3117,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Mark pullback phase with special indicators
             if state['phase'] == 'WAITING_PULLBACK':
-                pullback_count = state.get('pullback_count', 0)
+                pullback_count = state.get('pullback_candle_count', 0)
                 self.ax.text(0.02, 0.98, f'Pullback Count: {pullback_count}', 
                            transform=self.ax.transAxes, fontsize=10, 
                            bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7),
@@ -2887,6 +3135,7 @@ class AdvancedMT5TradingMonitorGUI:
                 # Get asset-specific ATR multipliers from config
                 sl_multiplier_long = self.extract_float_value(config.get('long_atr_sl_multiplier', 
                                                               config.get('LONG ATR SL Multiplier', '3.0')))
+               
                 tp_multiplier_long = self.extract_float_value(config.get('long_atr_tp_multiplier', 
                                                               config.get('LONG ATR TP Multiplier', '10.0')))
                 sl_multiplier_short = self.extract_float_value(config.get('short_atr_sl_multiplier', 
@@ -3131,7 +3380,7 @@ class AdvancedMT5TradingMonitorGUI:
             "PHASE CHANGE", "WAITING_PULLBACK", "WAITING_BREAKOUT",  # Phase changes
             "ENTRY", "EXIT", "BREAKOUT DETECTED", "SIGNAL",  # Trading signals
             "TRADE EXECUTED", "ORDER FILLED", "POSITION OPENED",  # Trade execution
-            "ERROR", "⚠️", "❌", "🎯", "🟢", "🔴", "🔄"  # Errors and alerts
+            "ERROR", "⚠️", "❌", "🎯", "🟢", "🔴"  # Errors and alerts
         ]
         
         # Check if message contains critical keywords
@@ -3385,7 +3634,6 @@ class AdvancedMT5TradingMonitorGUI:
             if atr is None or atr <= 0 or (isinstance(atr, float) and (pd.isna(atr) if pd else False)):
                 self.terminal_log(f"❌ {symbol}: Invalid ATR value for stop loss calculation (ATR={atr})", 
                                 "ERROR", critical=True)
-                self.terminal_log(f"   Indicators available: {list(indicators.keys())}", "ERROR", critical=True)
                 return False
             
             # Get multipliers from config

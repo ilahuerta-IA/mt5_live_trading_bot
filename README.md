@@ -88,8 +88,9 @@ dist\MT5_Trading_Bot.exe
 
 ### 6-Layer Entry Filter Cascade
 
-Every signal must pass **ALL** filters to prevent false entries:
+Every signal must pass **ALL** filters to prevent false entries. Filters are applied in two stages:
 
+**Stage 1: Crossover Validation (Scanning)**
 ```
 EMA Crossover Detected
     ↓
@@ -98,10 +99,19 @@ EMA Crossover Detected
 ✅ [3] Price Filter    → Price aligned with trend?
 ✅ [4] Candle Filter   → Previous candle confirms momentum?
 ✅ [5] EMA Ordering    → Multi-EMA sequence correct?
+    ↓
+ALL PASSED → ARMED State → Pullback → Window
+ANY FAILED → REJECTED (stay in SCANNING)
+```
+
+**Stage 2: Entry Validation (Window Breakout)**
+```
+Window Breakout Detected
+    ↓
 ✅ [6] Time Filter     → Within trading hours?
     ↓
-ALL PASSED → ARMED State → Pullback → Window → Entry
-ANY FAILED → REJECTED (stay in SCANNING)
+PASSED → ENTRY
+FAILED → SKIP (Return to SCANNING)
 ```
 
 **Impact:** Reduces entries from ~240/month to ~2-3/month per asset (matches backtesting)
