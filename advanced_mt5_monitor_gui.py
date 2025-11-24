@@ -105,6 +105,9 @@ ASSET_ALLOCATIONS = {
 # Default risk percentage per trade (% of allocated capital, not total portfolio)
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
+# Application Version
+APP_VERSION = "1.1.0"
+
 class AdvancedMT5TradingMonitorGUI:
     """
     Advanced MT5 Trading Monitor with Strategy Phase Tracking
@@ -120,7 +123,7 @@ class AdvancedMT5TradingMonitorGUI:
     
     def __init__(self, root):
         self.root = root
-        self.root.title("Advanced MT5 Monitor - Strategy Phase Tracker")
+        self.root.title(f"Advanced MT5 Monitor v{APP_VERSION} - Strategy Phase Tracker")
         self.root.geometry("1600x1000")
         
         # Strategy state tracking
@@ -486,6 +489,31 @@ class AdvancedMT5TradingMonitorGUI:
         self.time_label.config(text=current_time)
         self.root.after(1000, self.update_time)
         
+    def get_resource_path(self, relative_path):
+        """Get absolute path to resource, prioritizing user overrides then bundled data"""
+        # 1. Check current working directory (User Override)
+        cwd_path = os.path.join(os.getcwd(), relative_path)
+        if os.path.exists(cwd_path):
+            return cwd_path
+            
+        # 2. Check PyInstaller bundled data
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            bundled_path = os.path.join(sys._MEIPASS, relative_path)
+            if os.path.exists(bundled_path):
+                return bundled_path
+                
+        # 3. Check relative to script (Dev mode)
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            script_path = os.path.join(script_dir, relative_path)
+            if os.path.exists(script_path):
+                return script_path
+        except Exception:
+            pass
+            
+        # 4. Return CWD path as default (for creation/error reporting)
+        return cwd_path
+
     def load_strategy_configurations(self):
         """Load strategy configuration parameters"""
         symbols = ["EURUSD", "GBPUSD", "XAUUSD", "AUDUSD", "XAGUSD", "USDCHF"]
@@ -523,7 +551,10 @@ class AdvancedMT5TradingMonitorGUI:
                 }
                 
                 # Load configuration from strategy file
-                strategy_file = f"strategies/sunrise_ogle_{symbol.lower()}.py"
+                # ✅ FIX: Use get_resource_path to find bundled strategies in EXE
+                strategy_rel_path = f"strategies/sunrise_ogle_{symbol.lower()}.py"
+                strategy_file = self.get_resource_path(strategy_rel_path)
+                
                 config = self.parse_strategy_config(strategy_file, symbol)
                 self.strategy_configs[symbol] = config
                 
@@ -531,7 +562,12 @@ class AdvancedMT5TradingMonitorGUI:
                 pullback_enabled = config.get('LONG_USE_PULLBACK_ENTRY', 'N/A')
                 pullback_max = config.get('LONG_PULLBACK_MAX_CANDLES', 'N/A')
                 window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS', 'N/A')
-                self.terminal_log(f"✅ {symbol}: Configuration loaded | Pullback: {pullback_enabled}, Max: {pullback_max}, Window: {window_periods}", "SUCCESS")
+                
+                # Check for load error
+                if "error" in config:
+                    self.terminal_log(f"❌ {symbol}: {config['error']}", "ERROR")
+                else:
+                    self.terminal_log(f"✅ {symbol}: Configuration loaded | Pullback: {pullback_enabled}, Max: {pullback_max}, Window: {window_periods}", "SUCCESS")
                 
             except Exception as e:
                 self.terminal_log(f"❌ {symbol}: Config load error - {str(e)}", "ERROR")
@@ -546,7 +582,9 @@ class AdvancedMT5TradingMonitorGUI:
     def load_utc_offset_from_config(self):
         """Load UTC offset from config file"""
         try:
-            config_file = os.path.join(os.path.dirname(__file__), 'config', 'broker_timezone.json')
+            # ✅ FIX: Use get_resource_path to find config
+            config_file = self.get_resource_path(os.path.join('config', 'broker_timezone.json'))
+            
             if os.path.exists(config_file):
                 with open(config_file, 'r') as f:
                     config_data = json.load(f)
@@ -569,7 +607,8 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Save to config file
         try:
-            config_dir = os.path.join(os.path.dirname(__file__), 'config')
+            # ✅ FIX: Always save to CWD (user writable area), not _MEIPASS
+            config_dir = os.path.join(os.getcwd(), 'config')
             os.makedirs(config_dir, exist_ok=True)
             config_file = os.path.join(config_dir, 'broker_timezone.json')
             
@@ -797,7 +836,7 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Startup Summary
         self.terminal_log("=" * 70, "SUCCESS", critical=True)
-        self.terminal_log("🚀 MT5 TRADING BOT - SUNRISE OGLE STRATEGY ACTIVATED", "SUCCESS", critical=True)
+        self.terminal_log(f"🚀 MT5 TRADING BOT v{APP_VERSION} - SUNRISE OGLE STRATEGY ACTIVATED", "SUCCESS", critical=True)
         self.terminal_log("=" * 70, "SUCCESS", critical=True)
         self.terminal_log(f"📈 Monitored Pairs: {', '.join(self.strategy_states.keys())}", "INFO", critical=True)
         self.terminal_log(f"⏱️ Timeframe: 5-Minute (M5)", "INFO", critical=True)
@@ -1277,7 +1316,7 @@ class AdvancedMT5TradingMonitorGUI:
         Returns:
             bool: True if candle passes filter (or filter disabled), False otherwise
         """
-        if df is None or len(df) < 1:
+        if df is None or len(df) < 2:
             return True  # Not enough data, allow to pass
         
         try:
@@ -1288,9 +1327,10 @@ class AdvancedMT5TradingMonitorGUI:
             if not self.extract_bool_value(config.get(filter_key, 'False')):
                 return True  # Filter disabled
             
-            # Get previous candle (last closed candle)
-            prev_close = df['close'].iloc[-1]
-            prev_open = df['open'].iloc[-1]
+            # Get previous candle (Bar -1 in Backtrader terms, so iloc[-2] here)
+            # df.iloc[-1] is Bar 0 (current closed signal candle)
+            prev_close = df['close'].iloc[-2]
+            prev_open = df['open'].iloc[-2]
             
             # Validate based on direction
             if direction == 'LONG':
@@ -1334,18 +1374,21 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Validate based on direction
             if direction == 'LONG':
-                if not (ema_confirm > ema_fast and ema_fast > ema_medium and ema_medium > ema_slow):
+                # Match original strategy: Confirm > Fast AND Confirm > Medium AND Confirm > Slow
+                # (Not strict stacking like Confirm > Fast > Medium > Slow)
+                if not (ema_confirm > ema_fast and ema_confirm > ema_medium and ema_confirm > ema_slow):
                     self.terminal_log(
-                        f"❌ {symbol} LONG: EMA ordering failed (not confirm > fast > medium > slow)", 
+                        f"❌ {symbol} LONG: EMA ordering failed (Confirm not above all others)", 
                         "WARNING", critical=True
                     )
                     return False
                 else:
                     self.terminal_log(f"✅ {symbol} LONG: EMA ordering OK", "INFO")
             elif direction == 'SHORT':
-                if not (ema_confirm < ema_fast and ema_fast < ema_medium and ema_medium < ema_slow):
+                # Match original strategy: Confirm < Fast AND Confirm < Medium AND Confirm < Slow
+                if not (ema_confirm < ema_fast and ema_confirm < ema_medium and ema_confirm < ema_slow):
                     self.terminal_log(
-                        f"❌ {symbol} SHORT: EMA ordering failed (not confirm < fast < medium < slow)", 
+                        f"❌ {symbol} SHORT: EMA ordering failed (Confirm not below all others)", 
                         "WARNING", critical=True
                     )
                     return False
@@ -1440,17 +1483,9 @@ class AdvancedMT5TradingMonitorGUI:
             end_min = int(config.get('ENTRY_END_MINUTE', 59))
             
             # Read UTC offset from config file (set by GUI)
-            utc_offset = 1  # Default: UTC+1 (winter time)
-            try:
-                import json
-                from pathlib import Path
-                config_file = Path("config") / "broker_timezone.json"
-                if config_file.exists():
-                    with open(config_file, 'r') as f:
-                        utc_config = json.load(f)
-                        utc_offset = utc_config.get('utc_offset', 1)
-            except Exception:
-                utc_offset = 1  # Fallback to default
+            # ✅ FIX: Use cached self.broker_utc_offset instead of re-reading file
+            # This ensures we use the correct offset even if file access fails
+            utc_offset = getattr(self, 'broker_utc_offset', 1)
             
             # Convert broker time (Madrid UTC+1/UTC+2) to UTC
             utc_hour = (current_dt.hour - utc_offset) % 24
@@ -1939,22 +1974,10 @@ class AdvancedMT5TradingMonitorGUI:
         end_minute = int(config.get('ENTRY_END_MINUTE', 59))
         
         # Read UTC offset from config file (set by GUI)
-        utc_offset = 1  # Default: UTC+1 (winter time)
-        try:
-            import json
-            from pathlib import Path
-            config_file = Path("config") / "broker_timezone.json"
-            if config_file.exists():
-                with open(config_file, 'r') as f:
-                    utc_config = json.load(f)
-                    utc_offset = utc_config.get('utc_offset', 1)
-        except Exception:
-            utc_offset = 1  # Fallback to default
+        # ✅ FIX: Use cached self.broker_utc_offset instead of re-reading file
+        utc_offset = getattr(self, 'broker_utc_offset', 1)
         
         # Convert broker time (Madrid UTC+1/UTC+2) to UTC
-        if not hasattr(dt, 'hour'):
-            return True
-            
         utc_hour = (dt.hour - utc_offset) % 24
         
         # Convert to minutes for comparison
@@ -2295,26 +2318,27 @@ class AdvancedMT5TradingMonitorGUI:
                         current_state['pullback_candle_count'] = 0
                         
                         # Store signal detection ATR for increment/decrement filters (Matches strategy logic)
-                        if 'atr' in indicators and len(indicators['atr']) > 0:
-                            current_state['signal_detection_atr'] = float(indicators['atr'].iloc[-1])
+                        if 'atr' in indicators and indicators['atr'] is not None:
+                            # indicators['atr'] is a scalar float from calculate_indicators
+                            current_state['signal_detection_atr'] = float(indicators['atr'])
                         else:
                             current_state['signal_detection_atr'] = None
                         
-                        # Store trigger candle (using last closed candle from dataframe)
-                        # ⚠️ CRITICAL: df already has forming candle removed at line 747!
-                        # Use iloc[-1] for the CURRENT closed candle that triggered the crossover
-                        if len(df) >= 1:
-                            # ✅ FIX: Use 'time' column for timestamp, NOT df.index
-                            arming_candle_time = df['time'].iloc[-1] if len(df) > 0 else current_dt
+                        # Store trigger candle (using PREVIOUS closed candle to match Backtrader logic)
+                        # Backtrader stores close[-1] (Bar -1) as trigger candle
+                        # df.iloc[-1] is Bar 0. df.iloc[-2] is Bar -1.
+                        if len(df) >= 2:
+                            idx = -2
+                            arming_candle_time = df['time'].iloc[idx]
                             
                             current_state['signal_trigger_candle'] = {
-                                'open': float(df['open'].iloc[-1]),
-                                'close': float(df['close'].iloc[-1]),
-                                'high': float(df['high'].iloc[-1]),
-                                'low': float(df['low'].iloc[-1]),
+                                'open': float(df['open'].iloc[idx]),
+                                'close': float(df['close'].iloc[idx]),
+                                'high': float(df['high'].iloc[idx]),
+                                'low': float(df['low'].iloc[idx]),
                                 'datetime': arming_candle_time,
-                                'is_bullish': df['close'].iloc[-1] > df['open'].iloc[-1],
-                                'is_bearish': df['close'].iloc[-1] < df['open'].iloc[-1]
+                                'is_bullish': df['close'].iloc[idx] > df['open'].iloc[idx],
+                                'is_bearish': df['close'].iloc[idx] < df['open'].iloc[idx]
                             }
                             
                             # ✅ CRITICAL FIX: Mark CURRENT last closed candle as already processed
@@ -3862,7 +3886,7 @@ class AdvancedMT5TradingMonitorGUI:
 
 def main():
     """Main application entry point"""
-    print("🚀 Starting Advanced MT5 Trading Monitor...")
+    print(f"🚀 Starting Advanced MT5 Trading Monitor v{APP_VERSION}...")
     print("=" * 60)
     
     # Check dependencies
