@@ -268,7 +268,7 @@ class AdvancedMT5TradingMonitorGUI:
         initial_offset = f"UTC+{self.broker_utc_offset}"
         self.utc_offset_var = tk.StringVar(value=initial_offset)
         self.utc_offset_combo = ttk.Combobox(utc_row, textvariable=self.utc_offset_var, 
-                                             values=["UTC+1", "UTC+2"], state="readonly", width=10)
+                                             values=["UTC+1", "UTC+2", "UTC+3"], state="readonly", width=10)
         self.utc_offset_combo.pack(side=tk.LEFT, padx=(5, 10))
         self.utc_offset_combo.bind("<<ComboboxSelected>>", self.on_utc_offset_change)
         
@@ -602,6 +602,8 @@ class AdvancedMT5TradingMonitorGUI:
             self.broker_utc_offset = 1
         elif offset_str == "UTC+2":
             self.broker_utc_offset = 2
+        elif offset_str == "UTC+3":
+            self.broker_utc_offset = 3
         else:
             self.broker_utc_offset = 1  # Default
         
@@ -1192,7 +1194,7 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"⚠️ {symbol}: ATR filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            return False  # 🛡️ FIX: On error, BLOCK trade (Originals would not trade on error)
     
     def _validate_angle_filter(self, symbol, df, direction='LONG'):
         """Validate EMA angle filter - UNIVERSAL for all assets
@@ -1248,7 +1250,7 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"⚠️ {symbol}: Angle filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            return False  # 🛡️ FIX: On error, BLOCK trade
     
     def _validate_price_filter(self, symbol, df, direction='LONG'):
         """Validate price vs filter EMA - UNIVERSAL for all assets
@@ -1304,7 +1306,7 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"⚠️ {symbol}: Price filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            return False  # 🛡️ FIX: On error, BLOCK trade
     
     def _validate_candle_direction(self, symbol, df, direction='LONG'):
         """Validate previous candle direction - UNIVERSAL for all assets
@@ -1352,7 +1354,7 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"⚠️ {symbol}: Candle direction filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            return False  # 🛡️ FIX: On error, BLOCK trade
     
     def _validate_ema_ordering(self, symbol, ema_confirm, ema_fast, ema_medium, ema_slow, direction='LONG'):
         """Validate EMA ordering - UNIVERSAL for all assets
@@ -1399,7 +1401,7 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"⚠️ {symbol}: EMA ordering filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            return False  # 🛡️ FIX: On error, BLOCK trade
     
     def _validate_ema_position_filter(self, symbol, df, ema_fast, ema_medium, ema_slow, direction='LONG'):
         """Validate EMA position relative to price - UNIVERSAL for all assets
@@ -1455,66 +1457,63 @@ class AdvancedMT5TradingMonitorGUI:
             
         except Exception as e:
             self.terminal_log(f"⚠️ {symbol}: EMA position filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            return False  # 🛡️ FIX: On error, BLOCK trade
 
-    def _validate_time_filter(self, symbol, current_dt, direction='LONG'):
-        """Validate trading time window - UNIVERSAL for all assets
+    def _validate_time_filter(self, symbol, current_dt, direction):
+        """Validate if current time is within allowed trading hours (UTC)
         
-        Checks if current time falls within allowed trading hours.
-        Handles overnight windows (e.g., 23:00-16:00 UTC).
-        
-        **UTC CONVERSION:** Converts broker Madrid time (UTC+1/UTC+2) to UTC before checking.
-        Reads UTC offset from config/utc_offset.json (set by GUI dropdown).
-        
-        Returns:
-            bool: True if time passes filter (or filter disabled), False otherwise
+        Logic Layer:
+        - Takes Broker Time (current_dt)
+        - Converts to UTC by subtracting broker_utc_offset
+        - Compares against Strategy UTC hours
         """
+        config = self.strategy_configs.get(symbol, {})
+        
+        # Check if time filter is enabled
+        use_time_filter = config.get('Use Time Range Filter', 'False')
+        if isinstance(use_time_filter, str):
+            use_time_filter = use_time_filter.lower() in ('true', '1', 'yes')
+            
+        if not use_time_filter:
+            return True
+            
         try:
-            config = self.strategy_configs.get(symbol, {})
-            
-            # Check if time filter enabled
-            if config.get('USE_TIME_RANGE_FILTER', 'False') not in ('True', True):
-                return True  # Filter disabled
-            
-            # Get time range (these are in UTC)
-            start_hour = int(config.get('ENTRY_START_HOUR', 0))
-            start_min = int(config.get('ENTRY_START_MINUTE', 0))
-            end_hour = int(config.get('ENTRY_END_HOUR', 23))
-            end_min = int(config.get('ENTRY_END_MINUTE', 59))
-            
-            # Read UTC offset from config file (set by GUI)
-            # ✅ FIX: Use cached self.broker_utc_offset instead of re-reading file
-            # This ensures we use the correct offset even if file access fails
+            # 1. Get Broker Offset (Logic Layer)
             utc_offset = getattr(self, 'broker_utc_offset', 1)
             
-            # Convert broker time (Madrid UTC+1/UTC+2) to UTC
-            utc_hour = (current_dt.hour - utc_offset) % 24
+            # 2. Convert Broker Time to UTC (Strategy_Time_UTC = Broker_Time - Selected_Offset)
+            # current_dt is the time from the broker (e.g. Market Watch time)
+            strategy_time_utc = current_dt - timedelta(hours=utc_offset)
             
-            # Convert to minutes since midnight (now in UTC)
-            current_minutes = utc_hour * 60 + current_dt.minute
+            # 3. Get allowed hours (UTC)
+            start_hour = int(config.get('Entry Start Hour (UTC)', 0))
+            start_min = int(config.get('Entry Start Minute', 0))
+            end_hour = int(config.get('Entry End Hour (UTC)', 0))
+            end_min = int(config.get('Entry End Minute', 0))
+            
+            # 4. Convert everything to minutes for easier comparison
+            current_minutes = strategy_time_utc.hour * 60 + strategy_time_utc.minute
             start_minutes = start_hour * 60 + start_min
             end_minutes = end_hour * 60 + end_min
             
-            # Handle overnight windows (e.g., 23:00-16:00)
+            # Handle overnight ranges (e.g. 22:00 to 02:00)
             if start_minutes > end_minutes:
-                # Overnight: valid if AFTER start OR BEFORE end
-                in_range = current_minutes >= start_minutes or current_minutes <= end_minutes
+                # Overnight: Allowed if AFTER start OR BEFORE end
+                is_allowed = current_minutes >= start_minutes or current_minutes <= end_minutes
             else:
-                # Same day: valid if BETWEEN start AND end
-                in_range = start_minutes <= current_minutes <= end_minutes
-            
-            if not in_range:
-                self.terminal_log(
-                    f"❌ {symbol} {direction}: Time {current_dt.hour:02d}:{current_dt.minute:02d} outside trading hours [{start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d} UTC]", 
-                    "WARNING", critical=True
-                )
+                # Normal: Allowed if AFTER start AND BEFORE end
+                is_allowed = start_minutes <= current_minutes <= end_minutes
+                
+            if not is_allowed:
+                self.terminal_log(f"⏰ {symbol}: Outside trading hours (UTC). Current UTC: {strategy_time_utc.strftime('%H:%M')} | Allowed: {start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d}", 
+                                "WARNING", critical=False)
                 return False
-            
+                
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: Time filter error: {str(e)}", "WARNING")
-            return True  # On error, allow to pass (fail-safe)
+            self.terminal_log(f"❌ Time filter error: {str(e)}", "ERROR", critical=True)
+            return True # Fail safe: allow trade if filter fails
             
     def detect_ema_crossovers(self, symbol, indicators, df):
         """Detect EMA crossovers ONLY ON CLOSED CANDLES (matching Backtrader behavior)
@@ -1803,6 +1802,10 @@ class AdvancedMT5TradingMonitorGUI:
                                                       config.get('Medium EMA Period', '18')))  
             slow_period = self.extract_numeric_value(config.get('ema_slow_length', 
                                                     config.get('Slow EMA Period', '24')))
+            
+            # ⚠️ WARNING: Check for redundant EMA periods
+            if fast_period == medium_period:
+                self.terminal_log(f"⚠️ {symbol}: Fast EMA ({fast_period}) equals Medium EMA ({medium_period}) - Trend Cloud ineffective", "WARNING")
             filter_period = self.extract_numeric_value(config.get('ema_filter_price_length', 
                                                       config.get('Price Filter EMA Period', '100')))
             atr_period = self.extract_numeric_value(config.get('atr_length', 
@@ -1975,6 +1978,7 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Read UTC offset from config file (set by GUI)
         # ✅ FIX: Use cached self.broker_utc_offset instead of re-reading file
+        # This ensures we use the correct offset even if file access fails
         utc_offset = getattr(self, 'broker_utc_offset', 1)
         
         # Convert broker time (Madrid UTC+1/UTC+2) to UTC
@@ -2569,19 +2573,10 @@ class AdvancedMT5TradingMonitorGUI:
                                     self.terminal_log(f"📉 {symbol}: {candle_type} pullback #{current_state['pullback_candle_count']}/{max_candles} detected (need {max_candles - current_state['pullback_candle_count']} more)", 
                                                     "INFO", critical=True)
                             else:
-                                # Non-pullback candle - just wait, don't reset!
-                                # Only Global Invalidation (opposing EMA crossover) should reset the state
-                                candle_type = "Bullish" if current_close > current_open else "Bearish" if current_close < current_open else "Doji"
-                                candle_color = "GREEN" if current_close > current_open else "RED" if current_close < current_open else "NEUTRAL"
-                                
-                                # Explain WHY it's not a pullback
-                                if armed_direction == 'LONG':
-                                    reason = f"NOT BEARISH (Close {current_close:.5f} >= Open {current_open:.5f})"
-                                else:
-                                    reason = f"NOT BULLISH (Close {current_close:.5f} <= Open {current_open:.5f})"
-                                
-                                self.terminal_log(f"❌ NON-PULLBACK: {symbol} {armed_direction} | {candle_type} {candle_color} candle | {reason} | Count: {current_count}/{max_candles}", 
-                                                "INFO", critical=True)
+                                # ❌ INVALID PULLBACK (Wrong color) -> RESET (Matches Original)
+                                self.terminal_log(f"♻️ {symbol}: Pullback failed (wrong candle color) - Resetting to SCANNING", "NORMAL")
+                                self._reset_entry_state(symbol)
+                                return 'SCANNING'
                         
                         # 🎯 Summary after processing all candles
                         if len(candles_to_check) > 1:
@@ -2637,44 +2632,39 @@ class AdvancedMT5TradingMonitorGUI:
                         fresh_indicators = self.calculate_indicators(df, symbol)
                         
                         # 2. VALIDATE ALL FILTERS AGAIN (Strategy Phase 4 Validation)
-                        # We must ensure market conditions are still valid for entry
                         all_filters_passed = True
+                        
+                        # 🛑 FIX: DISABLE "DOUBLE JEOPARDY" VALIDATION
+                        # In Backtrader, pending orders are NOT cancelled if indicators shift slightly.
+                        # We only check if the setup was valid at creation.
+                        # We DO check Price Filter (Trend) and Time, but NOT Angle or ATR again.
                         
                         # Add ATR to df for validation functions
                         df_validation = df.copy()
                         if 'atr' in fresh_indicators:
                             df_validation['atr'] = fresh_indicators['atr']
                             
-                        # Extract fresh EMAs
+                        # --- DISABLED STRICT RE-VALIDATION TO MATCH ORIGINALS ---
+                        # if not self._validate_angle_filter(symbol, df_validation, armed_direction):
+                        #     self.terminal_log(f"⚠️ {symbol}: Angle changed, but honoring original signal", "DEBUG")
+                        
+                        # if not self._validate_atr_filter(symbol, df_validation, armed_direction):
+                        #      self.terminal_log(f"⚠️ {symbol}: ATR changed, but honoring original signal", "DEBUG")
+
+                        # ✅ KEEP: Price Filter (Trend Alignment) - We don't want to trade against the trend
+                        if all_filters_passed and not self._validate_price_filter(symbol, df_validation, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by Price Filter (Trend Reversal)", "WARNING", critical=True)
+                            all_filters_passed = False
+                            
+                        # ✅ KEEP: EMA Ordering - Basic trend structure must hold
                         fresh_fast = fresh_indicators.get('ema_fast', 0)
                         fresh_medium = fresh_indicators.get('ema_medium', 0)
                         fresh_slow = fresh_indicators.get('ema_slow', 0)
                         fresh_confirm = fresh_indicators.get('ema_confirm', 0)
                         
-                        # Validate Angle
-                        if not self._validate_angle_filter(symbol, df_validation, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by Angle Filter", "WARNING", critical=True)
-                            all_filters_passed = False
-                            
-                        # Validate Price Filter
-                        if all_filters_passed and not self._validate_price_filter(symbol, df_validation, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by Price Filter", "WARNING", critical=True)
-                            all_filters_passed = False
-                            
-                        # Validate EMA Ordering
                         if all_filters_passed and not self._validate_ema_ordering(symbol, fresh_confirm, fresh_fast, fresh_medium, fresh_slow, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Ordering", "WARNING", critical=True)
-                            all_filters_passed = False
-                        
-                        # Validate EMA Position
-                        if all_filters_passed and not self._validate_ema_position_filter(symbol, df_validation, fresh_fast, fresh_medium, fresh_slow, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Position Filter", "WARNING", critical=True)
-                            all_filters_passed = False
-                            
-                        # Validate ATR Filter
-                        if all_filters_passed and not self._validate_atr_filter(symbol, df_validation, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by ATR Filter", "WARNING", critical=True)
-                            all_filters_passed = False
+                             self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Ordering (Trend Broken)", "WARNING", critical=True)
+                             all_filters_passed = False
                             
                         # 3. VALIDATE TRIGGER CANDLE (Original Signal)
                         # Ensure the original signal candle is still valid (e.g. body size, direction)
@@ -3052,12 +3042,12 @@ class AdvancedMT5TradingMonitorGUI:
             # Clear previous plot
             self.ax.clear()
             
-            # Convert time to local timezone (fix +1 hour issue)
+            # Visualization Layer: Convert Broker Time to UTC
             df_local = df.copy()
             if pd is not None:
                 df_local['time'] = pd.to_datetime(df['time'])  # type: ignore
-                # Adjust for timezone offset (subtract 1 hour to correct the display)
-                df_local['time'] = df_local['time'] - timedelta(hours=1)
+                # Adjust for timezone offset (subtract broker offset to get UTC)
+                df_local['time'] = df_local['time'] - timedelta(hours=self.broker_utc_offset)
             else:
                 return
             
@@ -3213,7 +3203,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Formatting
             self.ax.set_title(f'{symbol} - Live Candlestick Chart with ATR SL/TP (Phase: {state["phase"]})')
-            self.ax.set_xlabel('Time (Local)')
+            self.ax.set_xlabel('Time (UTC)')
             self.ax.set_ylabel('Price')
             self.ax.legend(loc='upper left', fontsize=7, ncol=2)
             self.ax.grid(True, alpha=0.3)
@@ -3688,7 +3678,7 @@ class AdvancedMT5TradingMonitorGUI:
             tick_size = symbol_info.trade_tick_size
             
             # 🚨 CRITICAL FIX: Use MT5's tick_value directly (it's correct per broker contract specs)
-            # The formula is: lot_size = risk / (sl_distance_in_price × tick_value_per_tick × ticks_per_point)
+            # The formula is: lot_size = risk / (sl_distance_points × tick_value_per_tick × ticks_per_point)
             # Simplified: lot_size = risk / (sl_distance_in_points × value_per_point)
             
             # Calculate value per point from MT5 symbol info
