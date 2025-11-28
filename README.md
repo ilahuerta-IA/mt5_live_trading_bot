@@ -265,6 +265,7 @@ mt5_live_trading_bot/
 4. **[DALIO_ALLOCATION_SYSTEM.md](docs/DALIO_ALLOCATION_SYSTEM.md)** - Complete Ray Dalio implementation
 5. **[COMPREHENSIVE_STRATEGY_VERIFICATION.md](docs/archive/COMPREHENSIVE_STRATEGY_VERIFICATION.md)** - 1,500+ line verification (MT5 vs Backtrader)
 6. **[STRATEGY_FILES_POLICY.md](docs/STRATEGY_FILES_POLICY.md)** - READ-ONLY policy for strategy files
+7. **[strategy_comparison.md](docs/strategy_comparison.md)** - **Source of Truth** for strategy parameters and logic
 
 ### 🔧 Technical Documentation
 

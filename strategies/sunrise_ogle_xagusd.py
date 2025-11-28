@@ -242,7 +242,7 @@ AUTO_PLOT_SINGLE_MODE = False         # Automatically plot in single mode (LONG-
 # === LONG ATR VOLATILITY FILTER ===
 LONG_USE_ATR_FILTER = True                 # Enable ATR-based volatility filtering for long entries
 LONG_ATR_MIN_THRESHOLD = 0.01         
-LONG_ATR_MAX_THRESHOLD = 0.045 #0.04            # 🥈 SILVER: Increased from 2.00 for Silver's higher volatility (3x Gold range)
+LONG_ATR_MAX_THRESHOLD = 0.045             # 🥈 SILVER: Increased from 2.00 for Silver's higher volatility (3x Gold range)
 # ATR INCREMENT FILTER (DISABLED - Inferior Performance)
 LONG_USE_ATR_INCREMENT_FILTER = False       # 🎯 OPTIMIZED: Increments showed inferior performance
 LONG_ATR_INCREMENT_MIN_THRESHOLD = 0.000001     # 🥈 SILVER: Increased from 0.2 (3x for Silver volatility)
@@ -316,18 +316,18 @@ WINDOW_PRICE_OFFSET_MULTIPLIER = 0.001 #0.01      # NEW: Price expansion multipl
 
 # === TIME RANGE FILTER ===
 USE_TIME_RANGE_FILTER = True              # ENABLED: Time filter for complete analysis
-ENTRY_START_HOUR = 0#6                      # Start hour for entry window (UTC)
+ENTRY_START_HOUR = 0                      # Start hour for entry window (UTC)
 ENTRY_START_MINUTE = 0                     # Start minute for entry window (UTC)
-ENTRY_END_HOUR = 15#18 #15                        # End hour for entry window (UTC)
-ENTRY_END_MINUTE = 0#59                      # End minute for entry window (UTC)
+ENTRY_END_HOUR = 15                        # End hour for entry window (UTC)
+ENTRY_END_MINUTE = 0                      # End minute for entry window (UTC)
 
 
 class SunriseOgle(bt.Strategy):
     params = dict(
         # === TECHNICAL INDICATORS ===
-        ema_fast_length=14, #14              # Fast EMA period for trend detection #14
+        ema_fast_length=14,               # Fast EMA period for trend detection #14
         ema_medium_length=18,             # Medium EMA period for trend confirmation #18
-        ema_slow_length=24, #24,               # Slow EMA period for trend strength # 24
+        ema_slow_length=24,                # Slow EMA period for trend strength # 24
         ema_confirm_length=1,             # Confirmation EMA (usually 1 for immediate response)
         ema_filter_price_length=50,      # Price filter EMA to avoid counter-trend trades #50
         ema_exit_length=25,               # Exit EMA for crossover exit strategy
@@ -364,8 +364,8 @@ class SunriseOgle(bt.Strategy):
         long_max_angle=LONG_MAX_ANGLE,                   # Maximum angle in degrees for EMA slope (long entries)
         long_angle_scale_factor=LONG_ANGLE_SCALE_FACTOR,       # Scaling factor for angle calculation sensitivity (long entries)
         long_use_ema_below_price_filter=LONG_USE_EMA_BELOW_PRICE_FILTER,  # NEW: Require fast, medium & slow EMAs below price for long entries
-        long_atr_sl_multiplier=4.5,  #1.5                          # Stop Loss multiplier for LONG trades
-        long_atr_tp_multiplier=6.5, #6.5                          # Take Profit multiplier for LONG trades
+        long_atr_sl_multiplier=4.5,                            # Stop Loss multiplier for LONG trades
+        long_atr_tp_multiplier=6.5,                           # Take Profit multiplier for LONG trades
         
         # === LONG PULLBACK ENTRY SYSTEM ===
         long_use_pullback_entry=LONG_USE_PULLBACK_ENTRY,          # Enable 3-phase pullback entry system for long entries
@@ -397,7 +397,7 @@ class SunriseOgle(bt.Strategy):
         short_angle_scale_factor=SHORT_ANGLE_SCALE_FACTOR,       # Scaling factor for angle calculation sensitivity (short entries)
         short_use_ema_above_price_filter=SHORT_USE_EMA_ABOVE_PRICE_FILTER,  # NEW: Require fast, medium & slow EMAs above price for short entries
         short_atr_sl_multiplier=2.5,                             # Stop Loss multiplier for SHORT trades
-        short_atr_tp_multiplier=6.5,#3.5,                             # Take Profit multiplier for SHORT trades
+        short_atr_tp_multiplier=6.5,                             # Take Profit multiplier for SHORT trades
 
         # === SHORT PULLBACK ENTRY SYSTEM ===
         short_use_pullback_entry=SHORT_USE_PULLBACK_ENTRY,          # Enable 3-phase pullback entry system for short entries

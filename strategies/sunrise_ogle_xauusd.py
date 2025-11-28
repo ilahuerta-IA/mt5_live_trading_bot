@@ -235,8 +235,8 @@ LONG_ATR_MIN_THRESHOLD = 0.0
 LONG_ATR_MAX_THRESHOLD = 2.00        
 # ATR INCREMENT FILTER (DISABLED - Inferior Performance)
 LONG_USE_ATR_INCREMENT_FILTER = True       # 🎯 OPTIMIZED: Increments showed inferior performance
-LONG_ATR_INCREMENT_MIN_THRESHOLD = 0.2 #0.000050 # EXPANDED: Much wider range for more entries
-LONG_ATR_INCREMENT_MAX_THRESHOLD = 1.600000 # EXPANDED: Much wider range for more entries
+LONG_ATR_INCREMENT_MIN_THRESHOLD = 0.2       # EXPANDED: Much wider range for more entries
+LONG_ATR_INCREMENT_MAX_THRESHOLD = 1.600000     # EXPANDED: Much wider range for more entries
 # ATR DECREMENT FILTER (OPTIMIZED - Only very low changes)
 LONG_USE_ATR_DECREMENT_FILTER = False        # 🎯 OPTIMIZED: Decrements with better performance
 LONG_ATR_DECREMENT_MIN_THRESHOLD = -0.00002 # 🎯 EXPANDED: Much wider range for more entries
@@ -282,7 +282,7 @@ SHORT_USE_EMA_ABOVE_PRICE_FILTER = False    # NEW: Require fast, medium & slow E
 # === LONG PULLBACK ENTRY SYSTEM ===
 LONG_USE_PULLBACK_ENTRY = True             # Enable 3-phase pullback entry system for long entries
 LONG_PULLBACK_MAX_CANDLES = 3              # Max red candles in pullback for long entries (1-3 recommended)
-LONG_ENTRY_WINDOW_PERIODS = 1 #10 #7             # Bars to wait for breakout after pullback (long entries)
+LONG_ENTRY_WINDOW_PERIODS = 1              # Bars to wait for breakout after pullback (long entries)
 
 # === SHORT PULLBACK ENTRY SYSTEM ===
 SHORT_USE_PULLBACK_ENTRY = True            # Enable 3-phase pullback entry system for short entries
@@ -300,26 +300,26 @@ WINDOW_OFFSET_MULTIPLIER = 1.0             # Window delay multiplier (0.5=fast, 
                                           # Formula: window_start = current_bar + (pullback_count × this_value)
                                           # 🔬 EXPERIMENT: Try 0.5 for aggressive, 1.5 for conservative entries
 # 🔧 WINDOW_PRICE_OFFSET_MULTIPLIER: Controls the price expansion of the two-sided channel
-WINDOW_PRICE_OFFSET_MULTIPLIER = 0.001 #0.01      # NEW: Price expansion multiplier (0.5 = 50% of candle range)
+WINDOW_PRICE_OFFSET_MULTIPLIER = 0.001      # NEW: Price expansion multiplier (0.5 = 50% of candle range)
                                           # Formula: channel_width = candle_range × this_value
 # ===============================================================
 
 # === TIME RANGE FILTER ===
 USE_TIME_RANGE_FILTER = False              # ENABLED: Time filter for complete analysis
-ENTRY_START_HOUR = 00#6                      # Start hour for entry window (UTC)
+ENTRY_START_HOUR = 00                     # Start hour for entry window (UTC)
 ENTRY_START_MINUTE = 0                     # Start minute for entry window (UTC)
-ENTRY_END_HOUR = 8#18 #15                        # End hour for entry window (UTC)
-ENTRY_END_MINUTE = 0#59                      # End minute for entry window (UTC)
+ENTRY_END_HOUR = 8                        # End hour for entry window (UTC)
+ENTRY_END_MINUTE = 0                     # End minute for entry window (UTC)
 
 
 class SunriseOgle(bt.Strategy):
     params = dict(
         # === TECHNICAL INDICATORS ===
-        ema_fast_length=14, #14              # Fast EMA period for trend detection #14
+        ema_fast_length=14,               # Fast EMA period for trend detection #14
         ema_medium_length=14,             # Medium EMA period for trend confirmation #18
-        ema_slow_length=24, #24,               # Slow EMA period for trend strength # 24
+        ema_slow_length=24,                # Slow EMA period for trend strength # 24
         ema_confirm_length=1,             # Confirmation EMA (usually 1 for immediate response)
-        ema_filter_price_length=100,#70       # Price filter EMA to avoid counter-trend trades #50
+        ema_filter_price_length=100,       # Price filter EMA to avoid counter-trend trades #50
         ema_exit_length=25,               # Exit EMA for crossover exit strategy
         
         # === ATR RISK MANAGEMENT ===
@@ -354,8 +354,8 @@ class SunriseOgle(bt.Strategy):
         long_max_angle=LONG_MAX_ANGLE,                   # Maximum angle in degrees for EMA slope (long entries)
         long_angle_scale_factor=LONG_ANGLE_SCALE_FACTOR,       # Scaling factor for angle calculation sensitivity (long entries)
         long_use_ema_below_price_filter=LONG_USE_EMA_BELOW_PRICE_FILTER,  # NEW: Require fast, medium & slow EMAs below price for long entries
-        long_atr_sl_multiplier=4.5,  #1.5                          # Stop Loss multiplier for LONG trades
-        long_atr_tp_multiplier=6.5, #6.5                          # Take Profit multiplier for LONG trades
+        long_atr_sl_multiplier=4.5,                            # Stop Loss multiplier for LONG trades
+        long_atr_tp_multiplier=6.5,                           # Take Profit multiplier for LONG trades
         
         # === LONG PULLBACK ENTRY SYSTEM ===
         long_use_pullback_entry=LONG_USE_PULLBACK_ENTRY,          # Enable 3-phase pullback entry system for long entries
@@ -387,7 +387,7 @@ class SunriseOgle(bt.Strategy):
         short_angle_scale_factor=SHORT_ANGLE_SCALE_FACTOR,       # Scaling factor for angle calculation sensitivity (short entries)
         short_use_ema_above_price_filter=SHORT_USE_EMA_ABOVE_PRICE_FILTER,  # NEW: Require fast, medium & slow EMAs above price for short entries
         short_atr_sl_multiplier=2.5,                             # Stop Loss multiplier for SHORT trades
-        short_atr_tp_multiplier=6.5,#3.5,                             # Take Profit multiplier for SHORT trades
+        short_atr_tp_multiplier=6.5,                             # Take Profit multiplier for SHORT trades
 
         # === SHORT PULLBACK ENTRY SYSTEM ===
         short_use_pullback_entry=SHORT_USE_PULLBACK_ENTRY,          # Enable 3-phase pullback entry system for short entries
