@@ -6,17 +6,17 @@ This document serves as the "Source of Truth" for the configuration parameters o
 
 | Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Direction** | LONG ONLY | LONG ONLY | LONG ONLY | LONG & SHORT | LONG ONLY | LONG & SHORT |
+| **Direction** | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY |
 | **Long Pullback Candles** | 2 | 2 | 2 | 2 | 2 | 3 |
 | **Long Window Periods** | 1 | 1 | 1 | 2 | 3 | 1 |
 | **Short Pullback Candles** | 2 | N/A | N/A | 2 | 2 | 2 |
 | **Short Window Periods** | 7 | N/A | N/A | 7 | 7 | 7 |
-| **Window Offset Mult** | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 |
-| **Window Price Offset** | 0.5 | 0.01 | 1.0 | 0.01 | 0.5 | 0.5 |
-| **Long ATR SL Mult** | 3.0 | 1.5 | 3.5 | 2.5 | 3.0 | 4.5 |
-| **Long ATR TP Mult** | 10.0 | 10.0 | 6.5 | 10.0 | 10.0 | 6.5 |
-| **Short ATR SL Mult** | 3.0 | N/A | N/A | 2.5 | 3.0 | 2.5 |
-| **Short ATR TP Mult** | 8.0 | N/A | N/A | 6.5 | 8.0 | 6.5 |
+| **Window Offset Mult** | 0.5 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 |
+| **Window Price Offset** | 0.001 | 0.01 | 1.0 | 0.01 | 0.001 | 0.001 |
+| **Long ATR SL Mult** | 4.4 | 1.5 | 3.5 | 2.5 | 4.5 | 4.5 |
+| **Long ATR TP Mult** | 6.8 | 10.0 | 6.5 | 10.0 | 6.5 | 6.5 |
+| **Short ATR SL Mult** | 2.5 | N/A | N/A | 2.5 | 2.5 | 2.5 |
+| **Short ATR TP Mult** | 6.5 | N/A | N/A | 6.5 | 6.5 | 6.5 |
 
 ## 🧠 Critical Strategy Concepts
 

@@ -259,6 +259,9 @@ class AdvancedMT5TradingMonitorGUI:
         self.stop_button = ttk.Button(buttons_row, text="Stop Monitoring", command=self.stop_monitoring, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
         
+        self.reset_mem_button = ttk.Button(buttons_row, text="🗑️ Reset Memory", command=self.reset_strategy_memory)
+        self.reset_mem_button.pack(side=tk.LEFT, padx=(5, 0))
+        
         # Second row: UTC offset selector
         utc_row = ttk.Frame(control_frame)
         utc_row.pack(fill=tk.X)
@@ -814,6 +817,163 @@ class AdvancedMT5TradingMonitorGUI:
                     
         except Exception as e:
             self.terminal_log(f"⚠️ Signal processing error: {str(e)}", "ERROR")
+
+    def attempt_reconnect(self):
+        """Attempt to re-establish MT5 connection after IPC failure"""
+        self.terminal_log("🔄 CONNECTION LOST: Attempting to reconnect to MT5...", "WARNING", critical=True)
+        try:
+            # Force shutdown of existing connection
+            if mt5:
+                mt5.shutdown()
+            time.sleep(1)
+            
+            # Attempt re-initialization
+            if mt5.initialize():
+                self.terminal_log("✅ Reconnection successful - Resuming monitoring", "SUCCESS", critical=True)
+                self.mt5_connected = True
+                self.connection_status_label.config(text="Connected", foreground="green")
+                return True
+            else:
+                self.terminal_log(f"❌ Reconnection failed: {mt5.last_error()}", "ERROR", critical=True)
+                return False
+        except Exception as e:
+            self.terminal_log(f"❌ Reconnection error: {str(e)}", "ERROR", critical=True)
+            return False
+
+    def save_strategy_state(self):
+        """💾 PERSISTENCE: Save current strategy state to JSON file"""
+        try:
+            state_file = os.path.join(os.getcwd(), 'mt5_strategy_state.json')
+            serializable_state = {}
+            
+            for symbol, state in self.strategy_states.items():
+                # Create a shallow copy to modify for serialization
+                s_copy = state.copy()
+                
+                # Remove non-serializable objects (DataFrames, etc)
+                keys_to_remove = ['indicators', 'crossover_data', 'signal_trigger_candle']
+                for k in keys_to_remove:
+                    if k in s_copy:
+                        del s_copy[k]
+                
+                # Convert datetimes to ISO strings
+                if 'last_update' in s_copy and isinstance(s_copy['last_update'], datetime):
+                    s_copy['last_update'] = s_copy['last_update'].isoformat()
+                if 'last_candle_time' in s_copy and isinstance(s_copy['last_candle_time'], datetime):
+                    s_copy['last_candle_time'] = s_copy['last_candle_time'].isoformat()
+                if 'last_pullback_check_candle' in s_copy and isinstance(s_copy['last_pullback_check_candle'], datetime):
+                    s_copy['last_pullback_check_candle'] = s_copy['last_pullback_check_candle'].isoformat()
+                if 'last_crossover_check_candle' in s_copy and isinstance(s_copy['last_crossover_check_candle'], datetime):
+                    s_copy['last_crossover_check_candle'] = s_copy['last_crossover_check_candle'].isoformat()
+                if 'armed_at_candle_time' in s_copy and isinstance(s_copy['armed_at_candle_time'], datetime):
+                    s_copy['armed_at_candle_time'] = s_copy['armed_at_candle_time'].isoformat()
+                    
+                serializable_state[symbol] = s_copy
+                
+            with open(state_file, 'w') as f:
+                json.dump(serializable_state, f, indent=4)
+                
+            # self.terminal_log("💾 Strategy state saved to disk", "DEBUG")
+            
+        except Exception as e:
+            self.terminal_log(f"❌ Failed to save strategy state: {str(e)}", "ERROR")
+
+    def load_strategy_state(self):
+        """💾 PERSISTENCE: Load strategy state from JSON file with STALE CHECK"""
+        state_file = os.path.join(os.getcwd(), 'mt5_strategy_state.json')
+        if not os.path.exists(state_file):
+            self.terminal_log("ℹ️ No previous state file found - Starting fresh", "INFO")
+            return
+            
+        try:
+            with open(state_file, 'r') as f:
+                saved_state = json.load(f)
+                
+            loaded_count = 0
+            expired_count = 0
+            
+            # 🕒 CONFIG: Max age for state validity (e.g., 30 minutes)
+            # If the bot was off for > 30 mins, the setup is likely invalid/gone
+            MAX_STATE_AGE_MINUTES = 30
+            
+            current_time = datetime.now()
+            
+            for symbol, s_data in saved_state.items():
+                if symbol in self.strategy_states:
+                    # Check age of data
+                    last_update_str = s_data.get('last_update')
+                    is_stale = False
+                    
+                    if last_update_str:
+                        try:
+                            last_update = datetime.fromisoformat(last_update_str)
+                            age_minutes = (current_time - last_update).total_seconds() / 60
+                            
+                            if age_minutes > MAX_STATE_AGE_MINUTES:
+                                is_stale = True
+                                expired_count += 1
+                                self.terminal_log(f"⚠️ {symbol}: Memory is stale ({age_minutes:.0f} min old) - Discarding", "WARNING")
+                        except:
+                            is_stale = True # If date parse fails, assume stale
+                    
+                    if is_stale:
+                        continue # Skip loading this asset, leave as SCANNING
+                    
+                    # Restore critical state variables
+                    target = self.strategy_states[symbol]
+                    
+                    # Copy scalar values
+                    keys_to_restore = [
+                        'entry_state', 'phase', 'armed_direction', 'pullback_candle_count',
+                        'window_active', 'window_bar_start', 'window_expiry_bar',
+                        'window_top_limit', 'window_bottom_limit', 'current_bar',
+                        'candle_sequence_counter', 'last_pullback_candle_high', 'last_pullback_candle_low'
+                    ]
+                    
+                    for k in keys_to_restore:
+                        if k in s_data:
+                            target[k] = s_data[k]
+                            
+                    # Restore datetimes
+                    if 'last_candle_time' in s_data and s_data['last_candle_time']:
+                        target['last_candle_time'] = datetime.fromisoformat(s_data['last_candle_time'])
+                    if 'last_pullback_check_candle' in s_data and s_data['last_pullback_check_candle']:
+                        target['last_pullback_check_candle'] = datetime.fromisoformat(s_data['last_pullback_check_candle'])
+                    if 'last_crossover_check_candle' in s_data and s_data['last_crossover_check_candle']:
+                        target['last_crossover_check_candle'] = datetime.fromisoformat(s_data['last_crossover_check_candle'])
+                    if 'armed_at_candle_time' in s_data and s_data['armed_at_candle_time']:
+                        target['armed_at_candle_time'] = datetime.fromisoformat(s_data['armed_at_candle_time'])
+                        
+                    loaded_count += 1
+            
+            if loaded_count > 0:
+                self.terminal_log(f"💾 RESTORED MEMORY: Loaded state for {loaded_count} assets", "SUCCESS", critical=True)
+                if expired_count > 0:
+                    self.terminal_log(f"🗑️ EXPIRED MEMORY: Discarded {expired_count} stale states (> {MAX_STATE_AGE_MINUTES} min)", "WARNING", critical=True)
+                self.update_strategy_displays()
+            else:
+                self.terminal_log("ℹ️ Memory found but all states were stale/expired - Starting fresh", "INFO")
+                
+        except Exception as e:
+            self.terminal_log(f"❌ Failed to load strategy state: {str(e)}", "ERROR")
+
+    def reset_strategy_memory(self):
+        """🗑️ MANUAL RESET: Wipe memory file and reset all states"""
+        if messagebox.askyesno("Reset Memory", "Are you sure you want to wipe all strategy memory?\n\nThis will reset all assets to 'SCANNING' phase."):
+            try:
+                # 1. Delete the file
+                state_file = os.path.join(os.getcwd(), 'mt5_strategy_state.json')
+                if os.path.exists(state_file):
+                    os.remove(state_file)
+                
+                # 2. Reset internal state
+                for symbol in self.strategy_states:
+                    self._reset_entry_state(symbol)
+                
+                self.update_strategy_displays()
+                self.terminal_log("🗑️ MEMORY WIPED: All strategies reset to SCANNING", "WARNING", critical=True)
+            except Exception as e:
+                self.terminal_log(f"❌ Reset failed: {str(e)}", "ERROR")
             
     def start_monitoring(self):
         """Start the advanced monitoring process"""
@@ -823,6 +983,9 @@ class AdvancedMT5TradingMonitorGUI:
             
         if self.monitoring_active:
             return
+            
+        # 💾 PERSISTENCE: Try to load previous state
+        self.load_strategy_state()
             
         self.monitoring_active = True
         self.stop_event.clear()
@@ -859,6 +1022,9 @@ class AdvancedMT5TradingMonitorGUI:
         """Stop the monitoring process"""
         self.monitoring_active = False
         self.stop_event.set()
+        
+        # 💾 PERSISTENCE: Save state on stop
+        self.save_strategy_state()
         
         # Update GUI
         self.start_button.config(state=tk.NORMAL)
@@ -903,6 +1069,9 @@ class AdvancedMT5TradingMonitorGUI:
                             self.monitor_strategy_phase(symbol)
                             last_candle_check[symbol] = check_key
                     
+                    # 💾 PERSISTENCE: Save state after processing candle close
+                    self.save_strategy_state()
+                    
                     # Update displays after checking all symbols
                     self.root.after(0, self.update_strategy_displays)
                 
@@ -941,6 +1110,16 @@ class AdvancedMT5TradingMonitorGUI:
                 # Fast path: Fetch more bars for proper chart display (100 bars for charting)
                 # We need enough data to show the chart properly, not just 2-3 bars
                 rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 101)  # type: ignore
+                
+                # 🔄 RECONNECT LOGIC: Handle IPC failures
+                if rates is None:
+                    error_code, error_msg = mt5.last_error()
+                    if error_code == -10001 or "IPC send failed" in str(error_msg):
+                        self.terminal_log(f"⚠️ {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
+                        if self.attempt_reconnect():
+                            # Retry fetch once
+                            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 101)
+                
                 if rates is None or len(rates) < 2:
                     self.terminal_log(f"❌ {symbol}: Fast path failed - no data from MT5", "ERROR", critical=True)
                     return
@@ -1012,6 +1191,16 @@ class AdvancedMT5TradingMonitorGUI:
             # Longest EMA is Filter EMA (100) - we fetch 1.5x for stability (150 + 1 forming)
             # This reduces data processing by 70% while maintaining accuracy
             rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 151)  # type: ignore
+            
+            # 🔄 RECONNECT LOGIC: Handle IPC failures
+            if rates is None:
+                error_code, error_msg = mt5.last_error()
+                if error_code == -10001 or "IPC send failed" in str(error_msg):
+                    self.terminal_log(f"⚠️ {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
+                    if self.attempt_reconnect():
+                        # Retry fetch once
+                        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 151)
+            
             if rates is None:
                 error = mt5.last_error()  # type: ignore
                 self.terminal_log(f"⚠️ No chart data available for {symbol} - MT5 Error: {error}", "ERROR", critical=True)
