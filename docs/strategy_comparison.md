@@ -18,6 +18,48 @@ This document serves as the "Source of Truth" for the configuration parameters o
 | **Short ATR SL Mult** | 2.5 | N/A | N/A | 2.5 | 2.5 | 2.5 |
 | **Short ATR TP Mult** | 6.5 | N/A | N/A | 6.5 | 6.5 | 6.5 |
 
+## 📊 Additional Configuration Parameters
+
+### Window Time Offset Configuration
+| Asset | USE_WINDOW_TIME_OFFSET |
+| :--- | :---: |
+| AUDUSD | `False` |
+| EURUSD | `False` |
+| GBPUSD | `False` |
+| USDCHF | `False` |
+| XAGUSD | **`True`** ⬅️ Only one enabled! |
+| XAUUSD | `False` |
+
+### Time Range Filter Configuration
+| Asset | Enabled | Start (UTC) | End (UTC) |
+| :--- | :---: | :---: | :---: |
+| AUDUSD | ✅ Yes | 23:00 | 16:00 |
+| EURUSD | ✅ Yes | 21:00 | 03:00 |
+| GBPUSD | ❌ No | (7:00 - 18:00) |
+| USDCHF | ✅ Yes | 07:00 | 13:00 |
+| XAGUSD | ✅ Yes | 00:00 | 15:00 |
+| XAUUSD | ❌ No | (00:00 - 08:00) |
+
+### EMA Filter Price Length (Trend Filter Sensitivity)
+| Asset | EMA Filter Price Length |
+| :--- | :---: |
+| AUDUSD | 40 |
+| EURUSD | 70 |
+| GBPUSD | 70 |
+| USDCHF | 50 |
+| XAGUSD | 50 |
+| XAUUSD | 100 |
+
+### Angle Filter Configuration
+| Asset | Long Angle Filter | Min/Max Angle | Scale Factor |
+| :--- | :---: | :---: | :---: |
+| AUDUSD | ❌ Off | 35°-85° | 10000 |
+| EURUSD | ❌ Off | 35°-85° | 10000 |
+| GBPUSD | ✅ On | 45°-95° | 10000 |
+| USDCHF | ✅ On | 30°-85° | 10000 |
+| XAGUSD | ❌ Off | 30°-85° | 10000 |
+| XAUUSD | ❌ Off | 35°-95° | 10 ⬅️ Different! |
+
 ## 🧠 Critical Strategy Concepts
 
 ### 1. Pullback Candle vs. Window Candle
