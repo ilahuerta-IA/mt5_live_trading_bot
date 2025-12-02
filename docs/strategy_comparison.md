@@ -11,7 +11,7 @@ This document serves as the "Source of Truth" for the configuration parameters o
 | **Long Window Periods** | 1 | 1 | 1 | 2 | 3 | 1 |
 | **Short Pullback Candles** | 2 | N/A | N/A | 2 | 2 | 2 |
 | **Short Window Periods** | 7 | N/A | N/A | 7 | 7 | 7 |
-| **Window Offset Mult** | 0.5 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 |
+| **Window Offset Mult** | 0.5 | 1.0 | 1.0 | 1.0 | 0.5 | 1.0 |
 | **Window Price Offset** | 0.001 | 0.01 | 1.0 | 0.01 | 0.001 | 0.001 |
 | **Long ATR SL Mult** | 4.4 | 1.5 | 3.5 | 2.5 | 4.5 | 4.5 |
 | **Long ATR TP Mult** | 6.8 | 10.0 | 6.5 | 10.0 | 6.5 | 6.5 |

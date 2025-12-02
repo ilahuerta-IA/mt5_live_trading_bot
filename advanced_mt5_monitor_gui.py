@@ -106,7 +106,7 @@ ASSET_ALLOCATIONS = {
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
 # Application Version
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 class AdvancedMT5TradingMonitorGUI:
     """
@@ -1518,10 +1518,10 @@ class AdvancedMT5TradingMonitorGUI:
             if not self.extract_bool_value(config.get(filter_key, 'False')):
                 return True  # Filter disabled
             
-            # Get previous candle (Bar -1 in Backtrader terms, so iloc[-2] here)
-            # df.iloc[-1] is Bar 0 (current closed signal candle)
-            prev_close = df['close'].iloc[-2]
-            prev_open = df['open'].iloc[-2]
+            # Get previous candle (Signal Candle)
+            # df already has forming candle removed, so iloc[-1] is the last closed candle
+            prev_close = df['close'].iloc[-1]
+            prev_open = df['open'].iloc[-1]
             
             # Validate based on direction
             if direction == 'LONG':
@@ -2182,7 +2182,7 @@ class AdvancedMT5TradingMonitorGUI:
             # Normal range (e.g., 09:00-17:00)
             return start_time_minutes <= current_time_minutes <= end_time_minutes
         else:
-            # Overnight range (e.g., 23:00-16:00)
+            # Overnight range (e.g., 23:00-02:00)
             return current_time_minutes >= start_time_minutes or current_time_minutes <= end_time_minutes
     
     def _reset_entry_state(self, symbol):
@@ -2413,7 +2413,7 @@ class AdvancedMT5TradingMonitorGUI:
             current_dt = datetime.now()
         
         # ===================================================================
-        # TIME FILTER - ONLY FOR TRADE EXECUTION (NOT FOR MONITORING)
+        # TIME FILTER - ONLY FOR TRADE EXECUTION
         # ===================================================================
         # ⚠️ CRITICAL FIX: Time filter is checked ONLY at breakout execution
         # inside _phase4_monitor_window(), NOT here. Window monitoring and 
@@ -2832,7 +2832,7 @@ class AdvancedMT5TradingMonitorGUI:
                         df_validation = df.copy()
                         if 'atr' in fresh_indicators:
                             df_validation['atr'] = fresh_indicators['atr']
-                            
+                        
                         # --- DISABLED STRICT RE-VALIDATION TO MATCH ORIGINALS ---
                         # if not self._validate_angle_filter(symbol, df_validation, armed_direction):
                         #     self.terminal_log(f"⚠️ {symbol}: Angle changed, but honoring original signal", "DEBUG")
