@@ -106,7 +106,45 @@ ASSET_ALLOCATIONS = {
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
 # Application Version
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.4"
+
+# ═══════════════════════════════════════════════════════════════════
+# CRITICAL PARAMETERS - NO DEFAULTS ALLOWED
+# ═══════════════════════════════════════════════════════════════════
+# These parameters MUST be loaded from strategy files. If any are missing,
+# trading is DISABLED for that symbol until config is successfully loaded.
+# The bot will retry loading every 5 minutes.
+# ═══════════════════════════════════════════════════════════════════
+
+# Core critical params (always required)
+CRITICAL_PARAMS_CORE = [
+    # Window System (MOST CRITICAL - behavior changes completely)
+    'USE_WINDOW_TIME_OFFSET',
+    'WINDOW_OFFSET_MULTIPLIER',
+    'WINDOW_PRICE_OFFSET_MULTIPLIER',
+    
+    # Pullback System - LONG (always required)
+    'LONG_PULLBACK_MAX_CANDLES',
+    'LONG_ENTRY_WINDOW_PERIODS',
+    
+    # Risk Management - LONG
+    'long_atr_sl_multiplier',
+    'long_atr_tp_multiplier',
+    
+    # Trading Direction
+    'ENABLE_LONG_TRADES',
+]
+
+# Additional params required only if SHORT trades are enabled
+CRITICAL_PARAMS_SHORT = [
+    'SHORT_PULLBACK_MAX_CANDLES',
+    'SHORT_ENTRY_WINDOW_PERIODS',
+    'short_atr_sl_multiplier',
+    'short_atr_tp_multiplier',
+]
+
+# Config retry interval in seconds
+CONFIG_RETRY_INTERVAL = 300  # 5 minutes
 
 class AdvancedMT5TradingMonitorGUI:
     """
@@ -157,6 +195,10 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Recursion guard for hourly summary
         self._in_hourly_summary = False
+        
+        # Config error tracking - symbols with missing critical parameters
+        self.config_errors = {}  # {symbol: {'missing_params': [], 'last_retry': datetime, 'error_logged': bool}}
+        self.last_config_retry = {}  # {symbol: datetime} - Track last retry time per symbol
         
         self.data_provider = None
         
@@ -559,18 +601,40 @@ class AdvancedMT5TradingMonitorGUI:
                 strategy_file = self.get_resource_path(strategy_rel_path)
                 
                 config = self.parse_strategy_config(strategy_file, symbol)
-                self.strategy_configs[symbol] = config
                 
-                # Debug log for pullback configuration
-                pullback_enabled = config.get('LONG_USE_PULLBACK_ENTRY', 'N/A')
-                pullback_max = config.get('LONG_PULLBACK_MAX_CANDLES', 'N/A')
-                window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS', 'N/A')
-                
-                # Check for load error
+                # Check for load error first
                 if "error" in config:
-                    self.terminal_log(f"❌ {symbol}: {config['error']}", "ERROR")
+                    self.terminal_log(f"❌ {symbol}: {config['error']}", "ERROR", critical=True)
+                    self.strategy_configs[symbol] = config
+                    continue
+                
+                # 🛡️ CRITICAL: Validate all required parameters are loaded
+                is_valid, missing_params = self.validate_critical_params(symbol, config)
+                
+                if not is_valid:
+                    # CRITICAL ERROR - Missing required parameters
+                    self.terminal_log(f"", "ERROR")  # Empty line for visibility
+                    self.terminal_log(f"❌ CRITICAL: {symbol} missing required parameters!", "ERROR", critical=True)
+                    self.terminal_log(f"   Missing: {missing_params}", "ERROR", critical=True)
+                    self.terminal_log(f"   Trading DISABLED for {symbol} until config is fixed", "ERROR", critical=True)
+                    self.terminal_log(f"   Will retry loading every {CONFIG_RETRY_INTERVAL // 60} minutes", "WARNING", critical=True)
+                    self.terminal_log(f"", "ERROR")  # Empty line for visibility
+                    # Store config anyway but mark as invalid
+                    config['_config_valid'] = False
+                    config['_missing_params'] = missing_params
+                    self.strategy_configs[symbol] = config
                 else:
-                    self.terminal_log(f"✅ {symbol}: Configuration loaded | Pullback: {pullback_enabled}, Max: {pullback_max}, Window: {window_periods}", "SUCCESS")
+                    # All critical params present
+                    config['_config_valid'] = True
+                    self.strategy_configs[symbol] = config
+                    
+                    # Debug log for pullback configuration
+                    pullback_enabled = config.get('LONG_USE_PULLBACK_ENTRY', 'N/A')
+                    pullback_max = config.get('LONG_PULLBACK_MAX_CANDLES', 'N/A')
+                    window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS', 'N/A')
+                    use_time_offset = config.get('USE_WINDOW_TIME_OFFSET', 'N/A')
+                    
+                    self.terminal_log(f"✅ {symbol}: Configuration VALID | Pullback: {pullback_max} candles, Window: {window_periods} bars, TimeOffset: {use_time_offset}", "SUCCESS")
                 
             except Exception as e:
                 self.terminal_log(f"❌ {symbol}: Config load error - {str(e)}", "ERROR")
@@ -762,6 +826,92 @@ class AdvancedMT5TradingMonitorGUI:
         config['_raw_content'] = content[:1000]  # First 1000 chars for reference
                         
         return config
+    
+    def validate_critical_params(self, symbol, config):
+        """Validate that all critical parameters are loaded from strategy file
+        
+        Smart validation:
+        - Always checks CRITICAL_PARAMS_CORE
+        - Only checks CRITICAL_PARAMS_SHORT if ENABLE_SHORT_TRADES is True
+        
+        Returns:
+            tuple: (is_valid: bool, missing_params: list)
+        """
+        missing_params = []
+        
+        # 1. Check core params (always required)
+        for param in CRITICAL_PARAMS_CORE:
+            if param not in config or config.get(param) is None:
+                missing_params.append(param)
+        
+        # 2. Check if SHORT trades are enabled
+        enable_short = config.get('ENABLE_SHORT_TRADES', 'False')
+        if isinstance(enable_short, str):
+            enable_short = enable_short.lower() in ('true', '1', 'yes')
+        
+        # 3. If SHORT enabled, also validate SHORT params
+        if enable_short:
+            for param in CRITICAL_PARAMS_SHORT:
+                if param not in config or config.get(param) is None:
+                    missing_params.append(param)
+        
+        if missing_params:
+            # Store error state for this symbol
+            self.config_errors[symbol] = {
+                'missing_params': missing_params,
+                'last_retry': datetime.now(),
+                'error_logged': False
+            }
+            return False, missing_params
+        else:
+            # Clear any previous error state
+            if symbol in self.config_errors:
+                del self.config_errors[symbol]
+            return True, []
+    
+    def check_config_retry_needed(self, symbol):
+        """Check if a config retry is needed for a symbol with errors
+        
+        Returns:
+            bool: True if retry should be attempted
+        """
+        if symbol not in self.config_errors:
+            return False
+        
+        error_info = self.config_errors[symbol]
+        time_since_retry = (datetime.now() - error_info['last_retry']).total_seconds()
+        
+        return time_since_retry >= CONFIG_RETRY_INTERVAL
+    
+    def retry_load_config(self, symbol):
+        """Retry loading configuration for a symbol with errors"""
+        self.terminal_log(f"🔄 {symbol}: Retrying configuration load...", "WARNING", critical=True)
+        
+        try:
+            strategy_rel_path = f"strategies/sunrise_ogle_{symbol.lower()}.py"
+            strategy_file = self.get_resource_path(strategy_rel_path)
+            
+            config = self.parse_strategy_config(strategy_file, symbol)
+            
+            # Validate critical params
+            is_valid, missing_params = self.validate_critical_params(symbol, config)
+            
+            if is_valid:
+                # Success! Update config and clear error state
+                self.strategy_configs[symbol] = config
+                self.terminal_log(f"✅ {symbol}: Configuration RECOVERED - Trading ENABLED", "SUCCESS", critical=True)
+                return True
+            else:
+                # Still missing params
+                self.config_errors[symbol]['last_retry'] = datetime.now()
+                self.terminal_log(f"❌ {symbol}: Still missing parameters: {missing_params}", "ERROR", critical=True)
+                self.terminal_log(f"⏳ {symbol}: Next retry in {CONFIG_RETRY_INTERVAL // 60} minutes", "WARNING", critical=True)
+                return False
+                
+        except Exception as e:
+            self.config_errors[symbol]['last_retry'] = datetime.now()
+            self.terminal_log(f"❌ {symbol}: Config retry FAILED - {str(e)}", "ERROR", critical=True)
+            return False
         
     def initialize_mt5_connection(self):
         """Initialize MetaTrader5 connection"""
@@ -1093,6 +1243,29 @@ class AdvancedMT5TradingMonitorGUI:
         try:
             if not mt5 or pd is None:
                 return
+            
+            # 🛡️ CRITICAL: Check config validity before any trading logic
+            config = self.strategy_configs.get(symbol, {})
+            
+            # Check if config has errors
+            if config.get('_config_valid') == False or 'error' in config:
+                # Config is invalid - check if retry is needed
+                if self.check_config_retry_needed(symbol):
+                    self.retry_load_config(symbol)
+                    # Re-check config after retry
+                    config = self.strategy_configs.get(symbol, {})
+                    if config.get('_config_valid') != True:
+                        return  # Still invalid, skip this symbol
+                else:
+                    # Not time to retry yet, skip trading for this symbol
+                    # Only log periodically (every 5 minutes) to avoid spam
+                    error_info = self.config_errors.get(symbol, {})
+                    if not error_info.get('error_logged', False):
+                        missing = config.get('_missing_params', error_info.get('missing_params', ['unknown']))
+                        self.terminal_log(f"⏸️ {symbol}: Trading PAUSED - Missing params: {missing}", "WARNING")
+                        if symbol in self.config_errors:
+                            self.config_errors[symbol]['error_logged'] = True
+                    return
             
             # ⚡ PERFORMANCE OPTIMIZATION: Skip full data fetch if in WINDOW_OPEN
             # When monitoring breakout window, we only need current price, not full indicator recalculation
@@ -2207,35 +2380,62 @@ class AdvancedMT5TradingMonitorGUI:
         Implements true volatility expansion channel with:
         - Optional time offset controlled by use_window_time_offset parameter
         - Two-sided channel with success and failure boundaries
+        
+        NOTE: All critical parameters MUST be present (validated at startup)
         """
         state = self.strategy_states[symbol]
         
         # 1. Implement Optional Time Offset
+        # 🛡️ CRITICAL: No defaults - these were validated at startup
         window_start_bar = current_bar
-        use_time_offset = config.get('USE_WINDOW_TIME_OFFSET', 'True')
+        use_time_offset = config.get('USE_WINDOW_TIME_OFFSET')
+        
+        # Paranoid check - should never happen if validation is working
+        if use_time_offset is None:
+            self.terminal_log(f"❌ CRITICAL BUG: {symbol} USE_WINDOW_TIME_OFFSET is None - this should have been caught at startup!", "ERROR", critical=True)
+            return
+        
         if isinstance(use_time_offset, str):
             use_time_offset = use_time_offset.lower() in ('true', '1', 'yes')
         
         if use_time_offset:
-            window_offset_multiplier = float(config.get('WINDOW_OFFSET_MULTIPLIER', 1.0))
+            window_offset_multiplier = config.get('WINDOW_OFFSET_MULTIPLIER')
+            if window_offset_multiplier is None:
+                self.terminal_log(f"❌ CRITICAL BUG: {symbol} WINDOW_OFFSET_MULTIPLIER is None!", "ERROR", critical=True)
+                return
+            window_offset_multiplier = float(window_offset_multiplier)
             time_offset = int(state['pullback_candle_count'] * window_offset_multiplier)
             window_start_bar = current_bar + time_offset
         
         state['window_bar_start'] = window_start_bar
         
         # 2. Set Window Duration
+        # 🛡️ CRITICAL: No defaults - validated at startup
         if armed_direction == 'LONG':
-            window_periods = int(config.get('LONG_ENTRY_WINDOW_PERIODS', 7))
+            window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS')
+            if window_periods is None:
+                self.terminal_log(f"❌ CRITICAL BUG: {symbol} LONG_ENTRY_WINDOW_PERIODS is None!", "ERROR", critical=True)
+                return
+            window_periods = int(window_periods)
         else:
-            window_periods = int(config.get('SHORT_ENTRY_WINDOW_PERIODS', 7))
+            window_periods = config.get('SHORT_ENTRY_WINDOW_PERIODS')
+            if window_periods is None:
+                self.terminal_log(f"❌ CRITICAL BUG: {symbol} SHORT_ENTRY_WINDOW_PERIODS is None!", "ERROR", critical=True)
+                return
+            window_periods = int(window_periods)
         
         state['window_expiry_bar'] = window_start_bar + window_periods
         
         # 3. Calculate the Two-Sided Price Channel
+        # 🛡️ CRITICAL: No defaults - validated at startup
         last_high = state['last_pullback_candle_high']
         last_low = state['last_pullback_candle_low']
         candle_range = last_high - last_low
-        price_offset_multiplier = float(config.get('WINDOW_PRICE_OFFSET_MULTIPLIER', 0.001))  # Fixed: was 0.5, should be 0.001
+        price_offset_multiplier = config.get('WINDOW_PRICE_OFFSET_MULTIPLIER')
+        if price_offset_multiplier is None:
+            self.terminal_log(f"❌ CRITICAL BUG: {symbol} WINDOW_PRICE_OFFSET_MULTIPLIER is None!", "ERROR", critical=True)
+            return
+        price_offset_multiplier = float(price_offset_multiplier)
         price_offset = candle_range * price_offset_multiplier
         
         state['window_top_limit'] = last_high + price_offset

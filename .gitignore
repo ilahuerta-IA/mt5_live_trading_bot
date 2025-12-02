@@ -162,6 +162,9 @@ dist/
 # MT5 SPECIFIC
 # ===================
 
+# MT5 strategy state persistence (runtime data, not configuration)
+mt5_strategy_state.json
+
 # MT5 terminal files (if any get copied accidentally)
 *.ex5
 *.mq5
