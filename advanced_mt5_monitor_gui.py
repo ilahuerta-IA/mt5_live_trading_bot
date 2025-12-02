@@ -106,7 +106,7 @@ ASSET_ALLOCATIONS = {
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
 # Application Version
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 class AdvancedMT5TradingMonitorGUI:
     """
@@ -2820,40 +2820,46 @@ class AdvancedMT5TradingMonitorGUI:
                         # Cached indicators are from window open time, we need CURRENT values
                         fresh_indicators = self.calculate_indicators(df, symbol)
                         
-                        # 2. VALIDATE ALL FILTERS AGAIN (Strategy Phase 4 Validation)
+                        # 2. VALIDATE ALL ENTRY FILTERS (matches original _validate_all_entry_filters)
+                        # The original Backtrader re-validates these filters at breakout time:
+                        # - EMA Order Condition
+                        # - Price Filter EMA
+                        # - EMA Position Filter (EMAs below/above price)
+                        # - Angle Filter
                         all_filters_passed = True
-                        
-                        # 🛑 FIX: DISABLE "DOUBLE JEOPARDY" VALIDATION
-                        # In Backtrader, pending orders are NOT cancelled if indicators shift slightly.
-                        # We only check if the setup was valid at creation.
-                        # We DO check Price Filter (Trend) and Time, but NOT Angle or ATR again.
                         
                         # Add ATR to df for validation functions
                         df_validation = df.copy()
                         if 'atr' in fresh_indicators:
                             df_validation['atr'] = fresh_indicators['atr']
                         
-                        # --- DISABLED STRICT RE-VALIDATION TO MATCH ORIGINALS ---
-                        # if not self._validate_angle_filter(symbol, df_validation, armed_direction):
-                        #     self.terminal_log(f"⚠️ {symbol}: Angle changed, but honoring original signal", "DEBUG")
-                        
-                        # if not self._validate_atr_filter(symbol, df_validation, armed_direction):
-                        #      self.terminal_log(f"⚠️ {symbol}: ATR changed, but honoring original signal", "DEBUG")
-
-                        # ✅ KEEP: Price Filter (Trend Alignment) - We don't want to trade against the trend
-                        if all_filters_passed and not self._validate_price_filter(symbol, df_validation, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by Price Filter (Trend Reversal)", "WARNING", critical=True)
-                            all_filters_passed = False
-                            
-                        # ✅ KEEP: EMA Ordering - Basic trend structure must hold
+                        # Get fresh EMA values for validation
                         fresh_fast = fresh_indicators.get('ema_fast', 0)
                         fresh_medium = fresh_indicators.get('ema_medium', 0)
                         fresh_slow = fresh_indicators.get('ema_slow', 0)
                         fresh_confirm = fresh_indicators.get('ema_confirm', 0)
                         
+                        # ✅ 1. EMA Ordering - Basic trend structure must hold (matches original)
                         if all_filters_passed and not self._validate_ema_ordering(symbol, fresh_confirm, fresh_fast, fresh_medium, fresh_slow, armed_direction):
-                             self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Ordering (Trend Broken)", "WARNING", critical=True)
-                             all_filters_passed = False
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Ordering (Trend Broken)", "WARNING", critical=True)
+                            all_filters_passed = False
+                        
+                        # ✅ 2. Price Filter (Trend Alignment) - matches original
+                        if all_filters_passed and not self._validate_price_filter(symbol, df_validation, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by Price Filter (Trend Reversal)", "WARNING", critical=True)
+                            all_filters_passed = False
+                        
+                        # ✅ 3. EMA Position Filter (EMAs below/above price) - matches original
+                        if all_filters_passed:
+                            ema_position_passed = self._validate_ema_position_filter(symbol, df_validation, fresh_fast, fresh_medium, fresh_slow, armed_direction)
+                            if not ema_position_passed:
+                                self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Position Filter", "WARNING", critical=True)
+                                all_filters_passed = False
+                        
+                        # ✅ 4. Angle Filter - matches original _validate_all_entry_filters
+                        if all_filters_passed and not self._validate_angle_filter(symbol, df_validation, armed_direction):
+                            self.terminal_log(f"❌ {symbol}: Entry blocked by Angle Filter at breakout", "WARNING", critical=True)
+                            all_filters_passed = False
                             
                         # 3. VALIDATE TRIGGER CANDLE (Original Signal)
                         # Ensure the original signal candle is still valid (e.g. body size, direction)
