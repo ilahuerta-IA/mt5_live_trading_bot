@@ -106,7 +106,7 @@ ASSET_ALLOCATIONS = {
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
 # Application Version
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 class AdvancedMT5TradingMonitorGUI:
     """
@@ -2920,21 +2920,31 @@ class AdvancedMT5TradingMonitorGUI:
                 elif breakout_status == 'EXPIRED':
                     self.terminal_log(f"⏱️ {symbol}: Window EXPIRED - Returning to pullback search", 
                                     "WARNING", critical=True)
-                    # Return to ARMED state to search for more pullback
+                    # Return to ARMED state to search for more pullback (matches original Lines 1191-1198)
                     current_state['entry_state'] = f"ARMED_{armed_direction}"
                     current_state['phase'] = 'WAITING_PULLBACK'
                     current_state['window_active'] = False
-                    current_state['pullback_candle_count'] = 0  # Reset pullback count (matches original Line 1404)
+                    current_state['pullback_candle_count'] = 0  # Reset pullback count
+                    # Clear window variables (matches original: window_top_limit, window_bottom_limit, window_expiry_bar = None)
+                    current_state['window_bar_start'] = None
+                    current_state['window_expiry_bar'] = None
+                    current_state['window_top_limit'] = None
+                    current_state['window_bottom_limit'] = None
                     entry_state = f"ARMED_{armed_direction}"
                     
                 elif breakout_status == 'FAILURE':
                     self.terminal_log(f"❌ {symbol}: Failure boundary broken - Returning to pullback search", 
                                     "WARNING", critical=True)
-                    # Return to ARMED state
+                    # Return to ARMED state (matches original Lines 1216-1221)
                     current_state['entry_state'] = f"ARMED_{armed_direction}"
                     current_state['phase'] = 'WAITING_PULLBACK'
                     current_state['window_active'] = False
-                    current_state['pullback_candle_count'] = 0  # Reset pullback count (matches original Line 1420)
+                    current_state['pullback_candle_count'] = 0  # Reset pullback count
+                    # Clear window variables (matches original: window_top_limit, window_bottom_limit, window_expiry_bar = None)
+                    current_state['window_bar_start'] = None
+                    current_state['window_expiry_bar'] = None
+                    current_state['window_top_limit'] = None
+                    current_state['window_bottom_limit'] = None
                     entry_state = f"ARMED_{armed_direction}"
             
             # Update last update time
