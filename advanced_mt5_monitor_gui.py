@@ -146,6 +146,21 @@ CRITICAL_PARAMS_SHORT = [
 # Config retry interval in seconds
 CONFIG_RETRY_INTERVAL = 300  # 5 minutes
 
+# ═══════════════════════════════════════════════════════════════════
+# STATE PERSISTENCE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════
+STATE_MAX_AGE_MINUTES = 30  # Auto-expire saved state older than this
+STATE_FILE_NAME = 'mt5_strategy_state.json'  # State file name
+
+# Valid entry states for validation
+VALID_ENTRY_STATES = ['SCANNING', 'ARMED_LONG', 'ARMED_SHORT', 'WINDOW_OPEN']
+
+# ═══════════════════════════════════════════════════════════════════
+# RECONNECTION CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════
+MAX_RECONNECT_ATTEMPTS = 3  # Max consecutive reconnect attempts before giving up
+RECONNECT_BACKOFF_SECONDS = 2  # Initial backoff between retries (doubles each attempt)
+
 class AdvancedMT5TradingMonitorGUI:
     """
     Advanced MT5 Trading Monitor with Strategy Phase Tracking
@@ -199,6 +214,10 @@ class AdvancedMT5TradingMonitorGUI:
         # Config error tracking - symbols with missing critical parameters
         self.config_errors = {}  # {symbol: {'missing_params': [], 'last_retry': datetime, 'error_logged': bool}}
         self.last_config_retry = {}  # {symbol: datetime} - Track last retry time per symbol
+        
+        # Reconnection tracking
+        self.reconnect_attempts = 0  # Consecutive failed reconnect attempts
+        self.last_reconnect_time = None  # For backoff calculation
         
         self.data_provider = None
         
@@ -969,19 +988,42 @@ class AdvancedMT5TradingMonitorGUI:
             self.terminal_log(f"⚠️ Signal processing error: {str(e)}", "ERROR")
 
     def attempt_reconnect(self):
-        """Attempt to re-establish MT5 connection after IPC failure"""
-        self.terminal_log("🔄 CONNECTION LOST: Attempting to reconnect to MT5...", "WARNING", critical=True)
+        """Attempt to re-establish MT5 connection after IPC failure
+        
+        Features:
+        - Retry limit (MAX_RECONNECT_ATTEMPTS) to prevent infinite loops
+        - Exponential backoff between retries
+        - Resets counter on successful reconnection
+        
+        Returns:
+            bool: True if reconnection successful, False otherwise
+        """
+        # Check retry limit
+        if self.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
+            self.terminal_log(f"❌ Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached - Manual intervention required", "ERROR", critical=True)
+            self.terminal_log("   Please check MT5 terminal and restart the bot", "ERROR", critical=True)
+            return False
+        
+        self.reconnect_attempts += 1
+        
+        # Calculate backoff with exponential increase
+        backoff = RECONNECT_BACKOFF_SECONDS * (2 ** (self.reconnect_attempts - 1))
+        
+        self.terminal_log(f"🔄 CONNECTION LOST: Reconnect attempt {self.reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS} (backoff: {backoff}s)", "WARNING", critical=True)
+        
         try:
             # Force shutdown of existing connection
             if mt5:
                 mt5.shutdown()
-            time.sleep(1)
+            time.sleep(backoff)
             
             # Attempt re-initialization
             if mt5.initialize():
                 self.terminal_log("✅ Reconnection successful - Resuming monitoring", "SUCCESS", critical=True)
                 self.mt5_connected = True
-                self.connection_status_label.config(text="Connected", foreground="green")
+                self.reconnect_attempts = 0  # Reset counter on success
+                # Update GUI from main thread
+                self.root.after(0, lambda: self.connection_status_label.config(text="Connected", foreground="green"))
                 return True
             else:
                 self.terminal_log(f"❌ Reconnection failed: {mt5.last_error()}", "ERROR", critical=True)
@@ -991,14 +1033,23 @@ class AdvancedMT5TradingMonitorGUI:
             return False
 
     def save_strategy_state(self):
-        """💾 PERSISTENCE: Save current strategy state to JSON file"""
+        """💾 PERSISTENCE: Save current strategy state to JSON file
+        
+        Features:
+        - Atomic write (temp file + rename) to prevent corruption
+        - Deep copy for nested structures
+        - Clears signals list to prevent unbounded growth
+        - Uses configurable filename from STATE_FILE_NAME
+        """
         try:
-            state_file = os.path.join(os.getcwd(), 'mt5_strategy_state.json')
+            import copy
+            state_file = os.path.join(os.getcwd(), STATE_FILE_NAME)
+            temp_file = state_file + '.tmp'
             serializable_state = {}
             
             for symbol, state in self.strategy_states.items():
-                # Create a shallow copy to modify for serialization
-                s_copy = state.copy()
+                # Create a DEEP copy to avoid modifying original
+                s_copy = copy.deepcopy(state)
                 
                 # Remove non-serializable objects (DataFrames, etc)
                 keys_to_remove = ['indicators', 'crossover_data', 'signal_trigger_candle']
@@ -1006,31 +1057,54 @@ class AdvancedMT5TradingMonitorGUI:
                     if k in s_copy:
                         del s_copy[k]
                 
+                # Clear signals list to prevent unbounded growth
+                if 'signals' in s_copy:
+                    s_copy['signals'] = []
+                
                 # Convert datetimes to ISO strings
-                if 'last_update' in s_copy and isinstance(s_copy['last_update'], datetime):
-                    s_copy['last_update'] = s_copy['last_update'].isoformat()
-                if 'last_candle_time' in s_copy and isinstance(s_copy['last_candle_time'], datetime):
-                    s_copy['last_candle_time'] = s_copy['last_candle_time'].isoformat()
-                if 'last_pullback_check_candle' in s_copy and isinstance(s_copy['last_pullback_check_candle'], datetime):
-                    s_copy['last_pullback_check_candle'] = s_copy['last_pullback_check_candle'].isoformat()
-                if 'last_crossover_check_candle' in s_copy and isinstance(s_copy['last_crossover_check_candle'], datetime):
-                    s_copy['last_crossover_check_candle'] = s_copy['last_crossover_check_candle'].isoformat()
-                if 'armed_at_candle_time' in s_copy and isinstance(s_copy['armed_at_candle_time'], datetime):
-                    s_copy['armed_at_candle_time'] = s_copy['armed_at_candle_time'].isoformat()
+                datetime_keys = ['last_update', 'last_candle_time', 'last_pullback_check_candle', 
+                               'last_crossover_check_candle', 'armed_at_candle_time']
+                for k in datetime_keys:
+                    if k in s_copy and isinstance(s_copy[k], datetime):
+                        s_copy[k] = s_copy[k].isoformat()
+                
+                # Handle pandas Timestamp objects
+                for k in datetime_keys:
+                    if k in s_copy and hasattr(s_copy[k], 'isoformat'):
+                        s_copy[k] = s_copy[k].isoformat()
                     
                 serializable_state[symbol] = s_copy
-                
-            with open(state_file, 'w') as f:
+            
+            # Atomic write: write to temp file then rename
+            with open(temp_file, 'w') as f:
                 json.dump(serializable_state, f, indent=4)
+            
+            # Atomic rename (works on Windows too)
+            if os.path.exists(state_file):
+                os.remove(state_file)
+            os.rename(temp_file, state_file)
                 
             # self.terminal_log("💾 Strategy state saved to disk", "DEBUG")
             
         except Exception as e:
             self.terminal_log(f"❌ Failed to save strategy state: {str(e)}", "ERROR")
+            # Clean up temp file if it exists
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except:
+                pass
 
     def load_strategy_state(self):
-        """💾 PERSISTENCE: Load strategy state from JSON file with STALE CHECK"""
-        state_file = os.path.join(os.getcwd(), 'mt5_strategy_state.json')
+        """💾 PERSISTENCE: Load strategy state from JSON file with STALE CHECK
+        
+        Features:
+        - Uses configurable STATE_MAX_AGE_MINUTES for expiry
+        - Validates entry_state against VALID_ENTRY_STATES
+        - Specific exception handling (no bare except)
+        - Uses STATE_FILE_NAME constant
+        """
+        state_file = os.path.join(os.getcwd(), STATE_FILE_NAME)
         if not os.path.exists(state_file):
             self.terminal_log("ℹ️ No previous state file found - Starting fresh", "INFO")
             return
@@ -1041,10 +1115,7 @@ class AdvancedMT5TradingMonitorGUI:
                 
             loaded_count = 0
             expired_count = 0
-            
-            # 🕒 CONFIG: Max age for state validity (e.g., 30 minutes)
-            # If the bot was off for > 30 mins, the setup is likely invalid/gone
-            MAX_STATE_AGE_MINUTES = 30
+            invalid_count = 0
             
             current_time = datetime.now()
             
@@ -1059,15 +1130,25 @@ class AdvancedMT5TradingMonitorGUI:
                             last_update = datetime.fromisoformat(last_update_str)
                             age_minutes = (current_time - last_update).total_seconds() / 60
                             
-                            if age_minutes > MAX_STATE_AGE_MINUTES:
+                            if age_minutes > STATE_MAX_AGE_MINUTES:
                                 is_stale = True
                                 expired_count += 1
                                 self.terminal_log(f"⚠️ {symbol}: Memory is stale ({age_minutes:.0f} min old) - Discarding", "WARNING")
-                        except:
-                            is_stale = True # If date parse fails, assume stale
+                        except (ValueError, TypeError) as e:
+                            is_stale = True  # If date parse fails, assume stale
+                            self.terminal_log(f"⚠️ {symbol}: Invalid date format in saved state - Discarding", "WARNING")
+                    else:
+                        is_stale = True  # No last_update = stale
                     
                     if is_stale:
-                        continue # Skip loading this asset, leave as SCANNING
+                        continue  # Skip loading this asset, leave as SCANNING
+                    
+                    # Validate entry_state before loading
+                    saved_entry_state = s_data.get('entry_state', 'SCANNING')
+                    if saved_entry_state not in VALID_ENTRY_STATES:
+                        invalid_count += 1
+                        self.terminal_log(f"⚠️ {symbol}: Invalid entry_state '{saved_entry_state}' - Resetting to SCANNING", "WARNING")
+                        continue  # Skip loading, leave as SCANNING
                     
                     # Restore critical state variables
                     target = self.strategy_states[symbol]
@@ -1084,26 +1165,32 @@ class AdvancedMT5TradingMonitorGUI:
                         if k in s_data:
                             target[k] = s_data[k]
                             
-                    # Restore datetimes
-                    if 'last_candle_time' in s_data and s_data['last_candle_time']:
-                        target['last_candle_time'] = datetime.fromisoformat(s_data['last_candle_time'])
-                    if 'last_pullback_check_candle' in s_data and s_data['last_pullback_check_candle']:
-                        target['last_pullback_check_candle'] = datetime.fromisoformat(s_data['last_pullback_check_candle'])
-                    if 'last_crossover_check_candle' in s_data and s_data['last_crossover_check_candle']:
-                        target['last_crossover_check_candle'] = datetime.fromisoformat(s_data['last_crossover_check_candle'])
-                    if 'armed_at_candle_time' in s_data and s_data['armed_at_candle_time']:
-                        target['armed_at_candle_time'] = datetime.fromisoformat(s_data['armed_at_candle_time'])
+                    # Restore datetimes with specific exception handling
+                    datetime_keys = ['last_candle_time', 'last_pullback_check_candle', 
+                                   'last_crossover_check_candle', 'armed_at_candle_time']
+                    for k in datetime_keys:
+                        if k in s_data and s_data[k]:
+                            try:
+                                target[k] = datetime.fromisoformat(s_data[k])
+                            except (ValueError, TypeError):
+                                pass  # Leave as None if parse fails
                         
                     loaded_count += 1
             
             if loaded_count > 0:
                 self.terminal_log(f"💾 RESTORED MEMORY: Loaded state for {loaded_count} assets", "SUCCESS", critical=True)
                 if expired_count > 0:
-                    self.terminal_log(f"🗑️ EXPIRED MEMORY: Discarded {expired_count} stale states (> {MAX_STATE_AGE_MINUTES} min)", "WARNING", critical=True)
+                    self.terminal_log(f"🗑️ EXPIRED MEMORY: Discarded {expired_count} stale states (> {STATE_MAX_AGE_MINUTES} min)", "WARNING", critical=True)
+                if invalid_count > 0:
+                    self.terminal_log(f"⚠️ INVALID MEMORY: Reset {invalid_count} assets with invalid states", "WARNING", critical=True)
                 self.update_strategy_displays()
             else:
                 self.terminal_log("ℹ️ Memory found but all states were stale/expired - Starting fresh", "INFO")
                 
+        except json.JSONDecodeError as e:
+            self.terminal_log(f"❌ Corrupted state file (invalid JSON): {str(e)}", "ERROR")
+        except IOError as e:
+            self.terminal_log(f"❌ Failed to read strategy state file: {str(e)}", "ERROR")
         except Exception as e:
             self.terminal_log(f"❌ Failed to load strategy state: {str(e)}", "ERROR")
 
@@ -1111,14 +1198,22 @@ class AdvancedMT5TradingMonitorGUI:
         """🗑️ MANUAL RESET: Wipe memory file and reset all states"""
         if messagebox.askyesno("Reset Memory", "Are you sure you want to wipe all strategy memory?\n\nThis will reset all assets to 'SCANNING' phase."):
             try:
-                # 1. Delete the file
-                state_file = os.path.join(os.getcwd(), 'mt5_strategy_state.json')
+                # 1. Delete the file (use STATE_FILE_NAME constant)
+                state_file = os.path.join(os.getcwd(), STATE_FILE_NAME)
                 if os.path.exists(state_file):
                     os.remove(state_file)
                 
-                # 2. Reset internal state
+                # 2. Also remove temp file if it exists
+                temp_file = state_file + '.tmp'
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                
+                # 3. Reset internal state
                 for symbol in self.strategy_states:
                     self._reset_entry_state(symbol)
+                
+                # 4. Reset reconnect counter
+                self.reconnect_attempts = 0
                 
                 self.update_strategy_displays()
                 self.terminal_log("🗑️ MEMORY WIPED: All strategies reset to SCANNING", "WARNING", critical=True)
