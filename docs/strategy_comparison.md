@@ -2,63 +2,88 @@
 
 This document serves as the "Source of Truth" for the configuration parameters of the Sunrise Ogle strategy across all traded assets.
 
-## 📊 Asset Parameter Comparison
+## 📊 Core Asset Parameter Comparison
 
-| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Direction** | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY |
-| **Long Pullback Candles** | 2 | 2 | 2 | 2 | 2 | 3 |
-| **Long Window Periods** | 1 | 1 | 1 | 2 | 3 | 1 |
-| **Short Pullback Candles** | 2 | N/A | N/A | 2 | 2 | 2 |
-| **Short Window Periods** | 7 | N/A | N/A | 7 | 7 | 7 |
-| **Window Offset Mult** | 0.5 | 1.0 | 1.0 | 1.0 | 0.5 | 1.0 |
-| **Window Price Offset** | 0.001 | 0.01 | 1.0 | 0.01 | 0.001 | 0.001 |
-| **Long ATR SL Mult** | 4.4 | 1.5 | 3.5 | 2.5 | 4.5 | 4.5 |
-| **Long ATR TP Mult** | 6.8 | 10.0 | 6.5 | 10.0 | 6.5 | 6.5 |
-| **Short ATR SL Mult** | 2.5 | N/A | N/A | 2.5 | 2.5 | 2.5 |
-| **Short ATR TP Mult** | 6.5 | N/A | N/A | 6.5 | 6.5 | 6.5 |
+| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD | EURJPY | USDJPY |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Direction** | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG ONLY | LONG+SHORT |
+| **Long Pullback Candles** | 2 | 2 | 2 | 2 | 2 | 3 | 2 | 2 |
+| **Long Window Periods** | 1 | 1 | 1 | 2 | 3 | 1 | 3 | 7 |
+| **Short Pullback Candles** | 2 | N/A | N/A | 2 | 2 | 2 | N/A | 2 |
+| **Short Window Periods** | 7 | N/A | N/A | 7 | 7 | 7 | N/A | 7 |
+| **Window Offset Mult** | 0.5 | 1.0 | 1.0 | 1.0 | 0.5 | 1.0 | 2.0 | 2.0 |
+| **Window Price Offset** | 0.001 | 0.01 | 1.0 | 0.01 | 0.001 | 0.001 | 0.01 | 0.01 |
+| **Long ATR SL Mult** | 4.4 | 1.5 | 3.5 | 2.5 | 4.5 | 4.5 | 3.0 | 3.5 |
+| **Long ATR TP Mult** | 6.8 | 10.0 | 6.5 | 10.0 | 6.5 | 6.5 | 6.5 | 6.5 |
+| **Short ATR SL Mult** | 2.5 | N/A | N/A | 2.5 | 2.5 | 2.5 | N/A | 2.5 |
+| **Short ATR TP Mult** | 6.5 | N/A | N/A | 6.5 | 6.5 | 6.5 | N/A | 6.5 |
 
-## 📊 Additional Configuration Parameters
+## 📈 EMA Configuration
 
-### Window Time Offset Configuration
+| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD | EURJPY | USDJPY |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **EMA Fast Length** | 18 | 18 | 18 | 18 | 14 | 14 | 18 | 14 |
+| **EMA Medium Length** | 18 | 18 | 18 | 18 | 18 | 14 | 18 | 14 |
+| **EMA Slow Length** | 24 | 24 | 24 | 24 | 24 | 24 | 24 | 24 |
+| **EMA Confirm Length** | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| **EMA Filter Price Length** | 40 | 70 | 70 | 50 | 50 | 100 | 70 | 70 |
+
+## 📐 Angle Filter Configuration
+
+| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD | EURJPY | USDJPY |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Long Angle Filter** | ✅ On | ❌ Off | ✅ On | ❌ Off | ✅ On | ❌ Off | ✅ On | ✅ On |
+| **Long Min Angle** | 0° | 35° | 45° | 40° | 0° | 35° | 60° | 30° |
+| **Long Max Angle** | 30° | 85° | 95° | 80° | 50° | 95° | 88° | 95° |
+| **Long Scale Factor** | 10 | 10000 | 10000 | 10000 | 10 | 10 | 100 | 100 |
+| **Short Angle Filter** | ✅ On | N/A | N/A | ✅ On | ✅ On | ✅ On | N/A | ✅ On |
+| **Short Min Angle** | -90° | N/A | N/A | -90° | -90° | -80° | N/A | -90° |
+| **Short Max Angle** | -20° | N/A | N/A | -20° | -50° | -30° | N/A | -20° |
+| **Short Scale Factor** | 10 | N/A | N/A | 10000 | 10 | 10 | N/A | 100 |
+
+> **Scale Factor Notes:**
+> - **10** = Metals (XAGUSD, XAUUSD) and AUDUSD
+> - **100** = JPY pairs (EURJPY, USDJPY)
+> - **10000** = Standard forex (EURUSD, GBPUSD, USDCHF)
+
+## 📊 ATR Volatility Filter Configuration
+
+| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD | EURJPY | USDJPY |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **ATR Length** | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 10 |
+| **Long ATR Filter** | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ✅ On | ✅ On | ❌ Off | ❌ Off |
+| **Long ATR Increment Filter** | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ✅ On | ✅ On | ✅ On | ❌ Off |
+| **Long ATR Decrement Filter** | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ✅ On | ❌ Off | ✅ On | ❌ Off |
+
+## 🔧 Entry Filter Configuration
+
+| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD | EURJPY | USDJPY |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Price Filter EMA** | ✅ On | ✅ On | ✅ On | ✅ On | ✅ On | ✅ On | ✅ On | ✅ On |
+| **Candle Direction Filter** | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off |
+| **EMA Order Condition** | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off |
+| **EMA Below Price Filter** | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off | ❌ Off |
+
+## ⏰ Time Range Filter Configuration
+
+| Parameter | AUDUSD | EURUSD | GBPUSD | USDCHF | XAGUSD | XAUUSD | EURJPY | USDJPY |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Time Filter Enabled** | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| **Start Hour (UTC)** | 23:00 | 21:00 | (7:00) | 07:00 | 00:00 | (0:00) | (7:00) | (0:00) |
+| **End Hour (UTC)** | 16:00 | 03:00 | (18:00) | 13:00 | 15:00 | (8:00) | (16:00) | (23:59) |
+
+## 🔄 Window Time Offset Configuration
+
 | Asset | USE_WINDOW_TIME_OFFSET |
 | :--- | :---: |
 | AUDUSD | `False` |
 | EURUSD | `False` |
 | GBPUSD | `False` |
 | USDCHF | `False` |
-| XAGUSD | **`True`** ⬅️ Only one enabled! |
+| XAGUSD | **`True`** |
 | XAUUSD | `False` |
-
-### Time Range Filter Configuration
-| Asset | Enabled | Start (UTC) | End (UTC) |
-| :--- | :---: | :---: | :---: |
-| AUDUSD | ✅ Yes | 23:00 | 16:00 |
-| EURUSD | ✅ Yes | 21:00 | 03:00 |
-| GBPUSD | ❌ No | (7:00 - 18:00) |
-| USDCHF | ✅ Yes | 07:00 | 13:00 |
-| XAGUSD | ✅ Yes | 00:00 | 15:00 |
-| XAUUSD | ❌ No | (00:00 - 08:00) |
-
-### EMA Filter Price Length (Trend Filter Sensitivity)
-| Asset | EMA Filter Price Length |
-| :--- | :---: |
-| AUDUSD | 40 |
-| EURUSD | 70 |
-| GBPUSD | 70 |
-| USDCHF | 50 |
-| XAGUSD | 50 |
-| XAUUSD | 100 |
-
-### Angle Filter Configuration
-| Asset | Long Angle Filter | Min/Max Angle | Scale Factor |
-| :--- | :---: | :---: | :---: |
-| AUDUSD | ❌ Off | 35°-85° | 10000 |
-| EURUSD | ❌ Off | 35°-85° | 10000 |
-| GBPUSD | ✅ On | 45°-95° | 10000 |
-| USDCHF | ✅ On | 30°-85° | 10000 |
-| XAGUSD | ❌ Off | 30°-85° | 10000 |
-| XAUUSD | ❌ Off | 35°-95° | 10 ⬅️ Different! |
+| EURJPY | `False` |
+| USDJPY | **`True`** ⬅️ Both XAGUSD + USDJPY use time offset! |
 
 ## 🧠 Critical Strategy Concepts
 
@@ -102,3 +127,5 @@ When a candle breaks the Failure Limit (without breaking the Entry Target):
 - `mt5_live_trading_bot/strategies/sunrise_ogle_usdchf.py`
 - `mt5_live_trading_bot/strategies/sunrise_ogle_xagusd.py`
 - `mt5_live_trading_bot/strategies/sunrise_ogle_xauusd.py`
+- `mt5_live_trading_bot/strategies/sunrise_ogle_eurjpy.py`
+- `mt5_live_trading_bot/strategies/sunrise_ogle_usdjpy.py`
