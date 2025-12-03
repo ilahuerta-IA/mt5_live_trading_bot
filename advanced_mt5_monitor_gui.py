@@ -84,29 +84,36 @@ if not sunrise_signal_adapter:
 # - Inflation hedge (XAUUSD): Protects against monetary debasement
 # - Standard forex (GBPUSD, EURUSD): Balanced risk/reward
 # - Commodities (XAGUSD, AUDUSD): Inflation protection + industrial demand
+# - JPY Pairs (EURJPY, USDJPY): Asian session exposure + carry trade
 #
 # Position sizing: Risk = DEFAULT_RISK_PERCENT × allocated_capital
-# Example with $50,078.20 balance and 1% risk:
-#   USDCHF: $50,078.20 × 20% = $10,015.64 → $100.16 risk per trade
-#   XAUUSD: $50,078.20 × 18% = $9,014.08 → $90.14 risk per trade
-#   GBPUSD: $50,078.20 × 16% = $8,012.51 → $80.13 risk per trade
-#   XAGUSD: $50,078.20 × 15% = $7,511.73 → $75.12 risk per trade
+# Example with $50,000 balance and 1% risk:
+#   USDCHF: $50,000 × 15% = $7,500 → $75.00 risk per trade
+#   XAUUSD: $50,000 × 15% = $7,500 → $75.00 risk per trade
+#   GBPUSD: $50,000 × 12% = $6,000 → $60.00 risk per trade
+#   EURUSD: $50,000 × 12% = $6,000 → $60.00 risk per trade
+#   XAGUSD: $50,000 × 12% = $6,000 → $60.00 risk per trade
+#   AUDUSD: $50,000 × 10% = $5,000 → $50.00 risk per trade
+#   EURJPY: $50,000 × 12% = $6,000 → $60.00 risk per trade (JPY exposure)
+#   USDJPY: $50,000 × 12% = $6,000 → $60.00 risk per trade (JPY core)
 # ═══════════════════════════════════════════════════════════════════
 
 ASSET_ALLOCATIONS = {
-    'USDCHF': 0.20,   # 20% - Deflation hedge (safe haven currency)
-    'XAUUSD': 0.18,   # 18% - Inflation hedge (gold standard)
-    'GBPUSD': 0.16,   # 16% - Standard forex exposure
-    'EURUSD': 0.16,   # 16% - Standard forex exposure
-    'XAGUSD': 0.15,   # 15% - Commodity/industrial metal
-    'AUDUSD': 0.15,   # 15% - Commodity currency
+    'USDCHF': 0.15,   # 15% - Deflation hedge (safe haven currency)
+    'XAUUSD': 0.15,   # 15% - Inflation hedge (gold standard)
+    'GBPUSD': 0.12,   # 12% - Standard forex exposure
+    'EURUSD': 0.12,   # 12% - Standard forex exposure
+    'XAGUSD': 0.12,   # 12% - Commodity/industrial metal
+    'AUDUSD': 0.10,   # 10% - Commodity currency
+    'EURJPY': 0.12,   # 12% - JPY cross (Asian session + carry)
+    'USDJPY': 0.12,   # 12% - JPY core pair (BOJ policy sensitivity)
 }
 
 # Default risk percentage per trade (% of allocated capital, not total portfolio)
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
 # Application Version
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.2.0"
 
 # ═══════════════════════════════════════════════════════════════════
 # CRITICAL PARAMETERS - NO DEFAULTS ALLOWED
@@ -440,7 +447,7 @@ class AdvancedMT5TradingMonitorGUI:
         ttk.Label(control_frame, text="Chart Symbol:").pack(side=tk.LEFT)
         self.chart_symbol_var = tk.StringVar(value="EURUSD")
         chart_symbol_combo = ttk.Combobox(control_frame, textvariable=self.chart_symbol_var, 
-                                         values=["EURUSD", "XAUUSD", "GBPUSD", "AUDUSD", "XAGUSD", "USDCHF"],
+                                         values=["EURUSD", "XAUUSD", "GBPUSD", "AUDUSD", "XAGUSD", "USDCHF", "EURJPY", "USDJPY"],
                                          state="readonly", width=10)
         chart_symbol_combo.pack(side=tk.LEFT, padx=(5, 10))
         chart_symbol_combo.bind("<<ComboboxSelected>>", self.on_chart_symbol_change)
@@ -580,7 +587,7 @@ class AdvancedMT5TradingMonitorGUI:
 
     def load_strategy_configurations(self):
         """Load strategy configuration parameters"""
-        symbols = ["EURUSD", "GBPUSD", "XAUUSD", "AUDUSD", "XAGUSD", "USDCHF"]
+        symbols = ["EURUSD", "GBPUSD", "XAUUSD", "AUDUSD", "XAGUSD", "USDCHF", "EURJPY", "USDJPY"]
         
         for symbol in symbols:
             try:
