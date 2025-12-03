@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Advanced MT5 Trading Monitor GUI with Strategy Phase Tracking
@@ -168,6 +168,20 @@ VALID_ENTRY_STATES = ['SCANNING', 'ARMED_LONG', 'ARMED_SHORT', 'WINDOW_OPEN']
 # ==========
 MAX_RECONNECT_ATTEMPTS = 3  # Max consecutive reconnect attempts before giving up
 RECONNECT_BACKOFF_SECONDS = 2  # Initial backoff between retries (doubles each attempt)
+
+# ==========
+# DATA FETCHING CONFIGURATION
+# ==========
+MIN_BARS_REQUIRED = 100  # Minimum bars needed for indicator calculation (Filter EMA period)
+BARS_TO_FETCH = 151  # Bars to fetch from MT5 (1.5x Filter EMA + 1 forming candle)
+CHART_DISPLAY_BARS = 100  # Bars to display in chart view
+
+# ==========
+# TIMING CONFIGURATION
+# ==========
+CANDLE_CHECK_SLEEP_SECONDS = 5  # Sleep between candle checks in monitor loop
+GUI_UPDATE_INTERVAL_MS = 1000  # GUI refresh interval in milliseconds
+HOURLY_SUMMARY_MINUTES = 60  # Minutes between hourly summary logs
 
 class AdvancedMT5TradingMonitorGUI:
     """
@@ -559,7 +573,7 @@ class AdvancedMT5TradingMonitorGUI:
         """Update the time display"""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.time_label.config(text=current_time)
-        self.root.after(1000, self.update_time)
+        self.root.after(GUI_UPDATE_INTERVAL_MS, self.update_time)
         
     def get_resource_path(self, relative_path):
         """Get absolute path to resource, prioritizing user overrides then bundled data"""
@@ -1333,11 +1347,11 @@ class AdvancedMT5TradingMonitorGUI:
                 
                 # OPTIMIZED: Sleep 5 seconds (instead of 2)
                 # We only need to check near candle close times
-                time.sleep(5)
+                time.sleep(CANDLE_CHECK_SLEEP_SECONDS)
                 
             except Exception as e:
                 self.terminal_log(f"[X] Monitoring error: {str(e)}", "ERROR")
-                time.sleep(5)
+                time.sleep(CANDLE_CHECK_SLEEP_SECONDS)
                 
     def monitor_strategy_phase(self, symbol):
         """Monitor individual strategy phase and state"""
@@ -1443,7 +1457,7 @@ class AdvancedMT5TradingMonitorGUI:
                     
                     # Update chart data with recent bars (for proper visualization)
                     self.chart_data[symbol] = {
-                        'df': df.tail(100),  # Show last 100 bars in chart
+                        'df': df.tail(CHART_DISPLAY_BARS),  # Show last N bars in chart
                         'indicators': indicators,
                         'timestamp': datetime.now()
                     }
@@ -1464,7 +1478,7 @@ class AdvancedMT5TradingMonitorGUI:
             # OPTIMIZED: Reduced from 501 to 151 bars
             # Longest EMA is Filter EMA (100) - we fetch 1.5x for stability (150 + 1 forming)
             # This reduces data processing by 70% while maintaining accuracy
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 151)  # type: ignore
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, BARS_TO_FETCH)  # type: ignore
             
             # RECONNECT LOGIC: Handle IPC failures
             if rates is None:
@@ -1473,14 +1487,14 @@ class AdvancedMT5TradingMonitorGUI:
                     self.terminal_log(f" {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
                     if self.attempt_reconnect():
                         # Retry fetch once
-                        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 151)
+                        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, BARS_TO_FETCH)
             
             if rates is None:
                 error = mt5.last_error()  # type: ignore
                 self.terminal_log(f" No chart data available for {symbol} - MT5 Error: {error}", "ERROR", critical=True)
                 return
-            if len(rates) < 100:
-                self.terminal_log(f" Insufficient data for {symbol} - Got {len(rates)} bars, need 100+", "ERROR", critical=True)
+            if len(rates) < MIN_BARS_REQUIRED:
+                self.terminal_log(f" Insufficient data for {symbol} - Got {len(rates)} bars, need {MIN_BARS_REQUIRED}+", "ERROR", critical=True)
                 return
                 
             # Convert to DataFrame
@@ -1492,7 +1506,7 @@ class AdvancedMT5TradingMonitorGUI:
             # This ensures EMAs calculated match MT5 exactly
             df = df.iloc[:-1].copy()  # Remove last row (forming candle)
             
-            if len(df) < 100:  # Verify we still have enough data after removal
+            if len(df) < MIN_BARS_REQUIRED:  # Verify we still have enough data after removal
                 return
             
             # Calculate indicators (only for SCANNING/ARMED states)
@@ -1546,7 +1560,7 @@ class AdvancedMT5TradingMonitorGUI:
             # OPTIMIZED: Reduced from 250 to 100 bars for better chart zoom
             # 100 bars = 500 minutes = 8.3 hours of M5 data (perfect for intraday view)
             self.chart_data[symbol] = {
-                'df': df.tail(100),  # Show last 100 bars (much better zoom level)
+                'df': df.tail(CHART_DISPLAY_BARS),  # Show last N bars (much better zoom level)
                 'indicators': indicators,
                 'timestamp': datetime.now()
             }
@@ -3790,7 +3804,7 @@ class AdvancedMT5TradingMonitorGUI:
             self.terminal_log(f"[X] Phase update error: {str(e)}", "ERROR")
             
         # Schedule next update
-        self.root.after(1000, self.process_phase_updates)
+        self.root.after(GUI_UPDATE_INTERVAL_MS, self.process_phase_updates)
         
     def log_phase_summary(self):
         """Log current phase status for all assets"""
