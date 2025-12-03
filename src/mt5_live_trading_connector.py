@@ -69,7 +69,9 @@ strategies_to_import = [
     ('sunrise_ogle_xauusd', 'SunriseOgle', 'XAUUSD'),
     ('sunrise_ogle_audusd', 'SunriseOgle', 'AUDUSD'),
     ('sunrise_ogle_xagusd', 'SunriseOgle', 'XAGUSD'),
-    ('sunrise_ogle_usdchf', 'SunriseOgle', 'USDCHF')
+    ('sunrise_ogle_usdchf', 'SunriseOgle', 'USDCHF'),
+    ('sunrise_ogle_eurjpy', 'SunriseOgle', 'EURJPY'),
+    ('sunrise_ogle_usdjpy', 'SunriseOgleUSDJPY', 'USDJPY'),
 ]
 
 for module_name, class_name, symbol in strategies_to_import:
