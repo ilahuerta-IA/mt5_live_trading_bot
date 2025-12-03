@@ -13,13 +13,13 @@
 ## 🎯 What This Bot Does
 
 **Automated trading system** for MetaTrader 5 with:
-- 📊 **Ray Dalio Portfolio Allocation** - Economic scenario-based position sizing (20% USDCHF, 18% XAUUSD, 16% GBPUSD/EURUSD, 15% XAGUSD/AUDUSD)
+- 📊 **Ray Dalio Portfolio Allocation** - Economic scenario-based position sizing across 8 assets (18% XAUUSD, 15% USDCHF/AUDUSD, 13% GBPUSD, 12% EURUSD/XAGUSD, 8% USDJPY, 7% EURJPY)
 - 🛡️ **6-Layer Entry Filters** - Validates ATR, Angle, Price, Candle Direction, EMA Ordering, and Time before every trade
 - 🎨 **Real-Time GUI** - Live charts, EMA overlays, strategy states, and comprehensive monitoring
 - 📈 **4-Phase State Machine** - SCANNING → ARMED → WINDOW_OPEN → ENTRY with pullback confirmation
 - 💰 **MT5 Broker Integration** - Dynamic position sizing using broker-specific tick values (not hardcoded pip values)
 
-**Trading Assets:** EURUSD, GBPUSD, XAUUSD, AUDUSD, XAGUSD, USDCHF (M5 timeframe)
+**Trading Assets:** EURUSD, GBPUSD, XAUUSD, AUDUSD, XAGUSD, USDCHF, EURJPY, USDJPY (M5 timeframe)
 
 ---
 
@@ -71,16 +71,18 @@ dist\MT5_Trading_Bot.exe
 
 | Asset | Allocation | Economic Role | Example Risk* |
 |-------|-----------|---------------|---------------|
-| **USDCHF** | 20% | Deflation hedge (safe haven) | $100.16 |
 | **XAUUSD** | 18% | Inflation hedge (gold) | $90.14 |
-| **GBPUSD** | 16% | Balanced growth | $80.13 |
-| **EURUSD** | 16% | Balanced growth | $80.13 |
-| **XAGUSD** | 15% | Commodity exposure | $75.12 |
+| **USDCHF** | 15% | Deflation hedge (safe haven) | $75.12 |
+| **GBPUSD** | 13% | Balanced growth | $65.10 |
+| **EURUSD** | 12% | Balanced growth | $60.09 |
+| **XAGUSD** | 12% | Commodity exposure | $60.09 |
 | **AUDUSD** | 15% | Commodity currency | $75.12 |
+| **USDJPY** | 8% | JPY carry trade | $40.06 |
+| **EURJPY** | 7% | JPY cross exposure | $35.05 |
 
 *Based on $50,078 portfolio with 1% risk per allocation
 
-**Key Benefit:** Maximum 1% total portfolio risk even if all 6 assets signal simultaneously (vs 6% with equal weighting)
+**Key Benefit:** Maximum 1% total portfolio risk even if all 8 assets signal simultaneously (vs 8% with equal weighting)
 
 📖 **Full Documentation:** [DALIO_ALLOCATION_SYSTEM.md](docs/DALIO_ALLOCATION_SYSTEM.md)
 
@@ -148,6 +150,24 @@ FAILED → SKIP (Return to SCANNING)
 ---
 
 ## 🔧 Critical Features & Fixes
+
+### ✅ JPY Pairs & 8-Asset Portfolio (v1.2.0 - December 3, 2025)
+
+**NEW FEATURE:** Expanded portfolio to 8 assets with JPY pair support
+
+**New Assets:**
+- 🇯🇵 **EURJPY** - 7% allocation, JPY cross exposure
+- 🇯🇵 **USDJPY** - 8% allocation, JPY carry trade
+
+**Technical Details:**
+- JPY pairs use 3 decimal places (vs 5 for standard forex)
+- Pip value = 0.01 (vs 0.0001 for standard pairs)
+- Scale factor = 100 for proper pip calculations
+- Rebalanced all allocations to maintain 100% total
+
+**Strategy Files:**
+- `sunrise_ogle_eurjpy.py` - EURJPY LONG-only strategy
+- `sunrise_ogle_usdjpy.py` - USDJPY LONG-only strategy
 
 ### ✅ UTC Timezone & DST Fix (v2.2.0 - November 16, 2025)
 
@@ -232,7 +252,9 @@ mt5_live_trading_bot/
 │   ├── sunrise_ogle_xauusd.py     # XAUUSD strategy (READ-ONLY)
 │   ├── sunrise_ogle_audusd.py     # AUDUSD strategy (READ-ONLY)
 │   ├── sunrise_ogle_xagusd.py     # XAGUSD strategy (READ-ONLY)
-│   └── sunrise_ogle_usdchf.py     # USDCHF strategy (READ-ONLY)
+│   ├── sunrise_ogle_usdchf.py     # USDCHF strategy (READ-ONLY)
+│   ├── sunrise_ogle_eurjpy.py     # EURJPY strategy (READ-ONLY)
+│   └── sunrise_ogle_usdjpy.py     # USDJPY strategy (READ-ONLY)
 │
 ├── testing/                       # Test suite
 │   ├── test_setup.py              # Verify installation
@@ -240,6 +262,7 @@ mt5_live_trading_bot/
 │   ├── test_mt5_order.py          # Order execution test
 │   ├── check_broker_specs.py      # Broker verification
 │   ├── test_position_sizing.py    # Position sizing tests
+│   ├── test_jpy_entries.py        # JPY pairs validation tests
 │   └── verify_all_symbols.py      # Symbol configuration check
 │
 ├── docs/                          # Documentation
@@ -366,7 +389,7 @@ Each strategy file in `strategies/` contains:
 
 ### Chart Controls
 
-- **Symbol Selection** - Switch between 6 monitored assets
+- **Symbol Selection** - Switch between 8 monitored assets
 - **Timeframe** - M5 (5-minute candles)
 - **Indicators** - EMA overlays, volume bars
 - **Window Markers** - Shows breakout boundaries when window active
