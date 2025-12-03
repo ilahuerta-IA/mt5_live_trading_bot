@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Advanced MT5 Trading Monitor GUI with Strategy Phase Tracking
@@ -76,27 +76,28 @@ if not sunrise_signal_adapter:
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
     sunrise_signal_adapter = dynamic_import("sunrise_signal_adapter")
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # RAY DALIO ALL-WEATHER PORTFOLIO ALLOCATION SYSTEM
-# ═══════════════════════════════════════════════════════════════════
-# Asset-specific portfolio allocations based on economic scenario hedging:
-# - Deflation hedge (USDCHF): Strong in deflationary environments
-# - Inflation hedge (XAUUSD): Protects against monetary debasement
-# - Standard forex (GBPUSD, EURUSD): Balanced risk/reward
-# - Commodities (XAGUSD, AUDUSD): Inflation protection + industrial demand
-# - JPY Pairs (EURJPY, USDJPY): Asian session exposure + carry trade
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# 8-asset portfolio based on economic scenario hedging (v1.2.0):
+# - Inflation hedge: XAUUSD (gold), XAGUSD (silver)
+# - Deflation hedge: USDCHF (safe haven)
+# - Balanced forex: GBPUSD, EURUSD
+# - Commodity currency: AUDUSD
+# - JPY exposure: EURJPY, USDJPY (carry trade + BOJ sensitivity)
 #
-# Position sizing: Risk = DEFAULT_RISK_PERCENT × allocated_capital
-# Example with $50,000 balance and 1% risk:
-#   USDCHF: $50,000 × 15% = $7,500 → $75.00 risk per trade
-#   XAUUSD: $50,000 × 15% = $7,500 → $75.00 risk per trade
-#   GBPUSD: $50,000 × 12% = $6,000 → $60.00 risk per trade
-#   EURUSD: $50,000 × 12% = $6,000 → $60.00 risk per trade
-#   XAGUSD: $50,000 × 12% = $6,000 → $60.00 risk per trade
-#   AUDUSD: $50,000 × 10% = $5,000 → $50.00 risk per trade
-#   EURJPY: $50,000 × 12% = $6,000 → $60.00 risk per trade (JPY exposure)
-#   USDJPY: $50,000 × 12% = $6,000 → $60.00 risk per trade (JPY core)
-# ═══════════════════════════════════════════════════════════════════
+# Position sizing formula: Risk = DEFAULT_RISK_PERCENT Ã— allocated_capital
+# Example with $50,000 balance and 1% risk per allocation:
+#   XAUUSD: $50,000 Ã— 15% = $7,500 â†’ $75.00 risk per trade
+#   USDCHF: $50,000 Ã— 15% = $7,500 â†’ $75.00 risk per trade
+#   GBPUSD: $50,000 Ã— 12% = $6,000 â†’ $60.00 risk per trade
+#   EURUSD: $50,000 Ã— 12% = $6,000 â†’ $60.00 risk per trade
+#   XAGUSD: $50,000 Ã— 12% = $6,000 â†’ $60.00 risk per trade
+#   EURJPY: $50,000 Ã— 12% = $6,000 â†’ $60.00 risk per trade
+#   USDJPY: $50,000 Ã— 12% = $6,000 â†’ $60.00 risk per trade
+#   AUDUSD: $50,000 Ã— 10% = $5,000 â†’ $50.00 risk per trade
+# Total: 100% allocation across 8 assets
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 ASSET_ALLOCATIONS = {
     'USDCHF': 0.15,   # 15% - Deflation hedge (safe haven currency)
@@ -115,13 +116,13 @@ DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 # Application Version
 APP_VERSION = "1.2.0"
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CRITICAL PARAMETERS - NO DEFAULTS ALLOWED
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # These parameters MUST be loaded from strategy files. If any are missing,
 # trading is DISABLED for that symbol until config is successfully loaded.
 # The bot will retry loading every 5 minutes.
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # Core critical params (always required)
 CRITICAL_PARAMS_CORE = [
@@ -153,18 +154,18 @@ CRITICAL_PARAMS_SHORT = [
 # Config retry interval in seconds
 CONFIG_RETRY_INTERVAL = 300  # 5 minutes
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # STATE PERSISTENCE CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 STATE_MAX_AGE_MINUTES = 30  # Auto-expire saved state older than this
 STATE_FILE_NAME = 'mt5_strategy_state.json'  # State file name
 
 # Valid entry states for validation
 VALID_ENTRY_STATES = ['SCANNING', 'ARMED_LONG', 'ARMED_SHORT', 'WINDOW_OPEN']
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # RECONNECTION CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 MAX_RECONNECT_ATTEMPTS = 3  # Max consecutive reconnect attempts before giving up
 RECONNECT_BACKOFF_SECONDS = 2  # Initial backoff between retries (doubles each attempt)
 
@@ -173,7 +174,7 @@ class AdvancedMT5TradingMonitorGUI:
     Advanced MT5 Trading Monitor with Strategy Phase Tracking
     
     Features:
-    - Real-time strategy phase tracking (NORMAL → WAITING_PULLBACK → WAITING_BREAKOUT)
+    - Real-time strategy phase tracking (NORMAL â†’ WAITING_PULLBACK â†’ WAITING_BREAKOUT)
     - Live candlestick charts with indicators and window markers
     - Detailed configuration parameter viewer for each asset
     - Terminal-style phase output with color-coded states
@@ -327,7 +328,7 @@ class AdvancedMT5TradingMonitorGUI:
         self.stop_button = ttk.Button(buttons_row, text="Stop Monitoring", command=self.stop_monitoring, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
         
-        self.reset_mem_button = ttk.Button(buttons_row, text="🗑️ Reset Memory", command=self.reset_strategy_memory)
+        self.reset_mem_button = ttk.Button(buttons_row, text="ðŸ—‘ï¸ Reset Memory", command=self.reset_strategy_memory)
         self.reset_mem_button.pack(side=tk.LEFT, padx=(5, 0))
         
         # Second row: UTC offset selector
@@ -383,7 +384,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_strategy_phases_tab(self):
         """Create the strategy phase tracking tab"""
         phases_frame = ttk.Frame(self.left_notebook)
-        self.left_notebook.add(phases_frame, text="📊 Strategy Phases")
+        self.left_notebook.add(phases_frame, text="ðŸ“Š Strategy Phases")
         
         # Strategy list with phases
         columns = ("Symbol", "Phase", "Direction", "Pullback Count", "Window Active", "Last Update")
@@ -410,7 +411,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_configuration_tab(self):
         """Create the configuration viewer tab"""
         config_frame = ttk.Frame(self.left_notebook)
-        self.left_notebook.add(config_frame, text="⚙️ Configuration")
+        self.left_notebook.add(config_frame, text="âš™ï¸ Configuration")
         
         # Symbol selector
         selector_frame = ttk.Frame(config_frame)
@@ -429,7 +430,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_indicators_tab(self):
         """Create the technical indicators tab"""
         indicators_frame = ttk.Frame(self.left_notebook)
-        self.left_notebook.add(indicators_frame, text="📈 Indicators")
+        self.left_notebook.add(indicators_frame, text="ðŸ“ˆ Indicators")
         
         # Indicators display
         self.indicators_text = scrolledtext.ScrolledText(indicators_frame, height=15, font=("Consolas", 9))
@@ -438,7 +439,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_charts_tab(self):
         """Create the live charts tab"""
         charts_frame = ttk.Frame(self.right_notebook)
-        self.right_notebook.add(charts_frame, text="📊 Live Charts")
+        self.right_notebook.add(charts_frame, text="ðŸ“Š Live Charts")
         
         # Chart controls
         control_frame = ttk.Frame(charts_frame)
@@ -460,7 +461,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_no_charts_tab(self):
         """Create a tab explaining chart requirements"""
         no_charts_frame = ttk.Frame(self.right_notebook)
-        self.right_notebook.add(no_charts_frame, text="📊 Charts (Unavailable)")
+        self.right_notebook.add(no_charts_frame, text="ðŸ“Š Charts (Unavailable)")
         
         info_label = ttk.Label(no_charts_frame, text="Charts require matplotlib and mplfinance libraries.\n\n"
                                                     "Install with: pip install matplotlib mplfinance\n\n"
@@ -471,7 +472,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_terminal_tab(self):
         """Create the terminal output tab"""
         terminal_frame = ttk.Frame(self.right_notebook)
-        self.right_notebook.add(terminal_frame, text="🖥️ Terminal Output")
+        self.right_notebook.add(terminal_frame, text="ðŸ–¥ï¸ Terminal Output")
         
         # Terminal display
         self.terminal_text = scrolledtext.ScrolledText(terminal_frame, height=25, font=("Consolas", 9), 
@@ -496,7 +497,7 @@ class AdvancedMT5TradingMonitorGUI:
     def create_window_markers_tab(self):
         """Create the window markers tracking tab"""
         markers_frame = ttk.Frame(self.right_notebook)
-        self.right_notebook.add(markers_frame, text="🎯 Window Markers")
+        self.right_notebook.add(markers_frame, text="ðŸŽ¯ Window Markers")
         
         # Window markers display
         columns = ("Symbol", "Direction", "Window Start", "Window End", "Breakout Level", "Status")
@@ -621,8 +622,7 @@ class AdvancedMT5TradingMonitorGUI:
                     'digits': digits  # MT5 symbol precision for display formatting
                 }
                 
-                # Load configuration from strategy file
-                # ✅ FIX: Use get_resource_path to find bundled strategies in EXE
+                # Load configuration from strategy file (supports bundled EXE)
                 strategy_rel_path = f"strategies/sunrise_ogle_{symbol.lower()}.py"
                 strategy_file = self.get_resource_path(strategy_rel_path)
                 
@@ -630,17 +630,17 @@ class AdvancedMT5TradingMonitorGUI:
                 
                 # Check for load error first
                 if "error" in config:
-                    self.terminal_log(f"❌ {symbol}: {config['error']}", "ERROR", critical=True)
+                    self.terminal_log(f"âŒ {symbol}: {config['error']}", "ERROR", critical=True)
                     self.strategy_configs[symbol] = config
                     continue
                 
-                # 🛡️ CRITICAL: Validate all required parameters are loaded
+                # ðŸ›¡ï¸ CRITICAL: Validate all required parameters are loaded
                 is_valid, missing_params = self.validate_critical_params(symbol, config)
                 
                 if not is_valid:
                     # CRITICAL ERROR - Missing required parameters
                     self.terminal_log(f"", "ERROR")  # Empty line for visibility
-                    self.terminal_log(f"❌ CRITICAL: {symbol} missing required parameters!", "ERROR", critical=True)
+                    self.terminal_log(f"âŒ CRITICAL: {symbol} missing required parameters!", "ERROR", critical=True)
                     self.terminal_log(f"   Missing: {missing_params}", "ERROR", critical=True)
                     self.terminal_log(f"   Trading DISABLED for {symbol} until config is fixed", "ERROR", critical=True)
                     self.terminal_log(f"   Will retry loading every {CONFIG_RETRY_INTERVAL // 60} minutes", "WARNING", critical=True)
@@ -660,10 +660,10 @@ class AdvancedMT5TradingMonitorGUI:
                     window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS', 'N/A')
                     use_time_offset = config.get('USE_WINDOW_TIME_OFFSET', 'N/A')
                     
-                    self.terminal_log(f"✅ {symbol}: Configuration VALID | Pullback: {pullback_max} candles, Window: {window_periods} bars, TimeOffset: {use_time_offset}", "SUCCESS")
+                    self.terminal_log(f"âœ… {symbol}: Configuration VALID | Pullback: {pullback_max} candles, Window: {window_periods} bars, TimeOffset: {use_time_offset}", "SUCCESS")
                 
             except Exception as e:
-                self.terminal_log(f"❌ {symbol}: Config load error - {str(e)}", "ERROR")
+                self.terminal_log(f"âŒ {symbol}: Config load error - {str(e)}", "ERROR")
                 self.strategy_configs[symbol] = {"error": str(e)}
                 
         # Update symbol selector
@@ -675,7 +675,7 @@ class AdvancedMT5TradingMonitorGUI:
     def load_utc_offset_from_config(self):
         """Load UTC offset from config file"""
         try:
-            # ✅ FIX: Use get_resource_path to find config
+            # Supports bundled EXE config paths
             config_file = self.get_resource_path(os.path.join('config', 'broker_timezone.json'))
             
             if os.path.exists(config_file):
@@ -700,9 +700,8 @@ class AdvancedMT5TradingMonitorGUI:
         else:
             self.broker_utc_offset = 1  # Default
         
-        # Save to config file
+        # Save to config file (CWD for user-writable access)
         try:
-            # ✅ FIX: Always save to CWD (user writable area), not _MEIPASS
             config_dir = os.path.join(os.getcwd(), 'config')
             os.makedirs(config_dir, exist_ok=True)
             config_file = os.path.join(config_dir, 'broker_timezone.json')
@@ -716,12 +715,12 @@ class AdvancedMT5TradingMonitorGUI:
             with open(config_file, 'w') as f:
                 json.dump(config_data, f, indent=4)
                 
-            self.terminal_log(f"🌍 Broker UTC Offset changed to: {offset_str}", "INFO", critical=True)
-            self.terminal_log(f"   → Saved to config/broker_timezone.json", "INFO", critical=True)
-            self.terminal_log(f"   → Time filter will convert broker time to UTC before checking", "INFO", critical=True)
-            self.terminal_log(f"   → Affects: EURUSD, AUDUSD, XAGUSD, USDCHF (assets with time filter enabled)", "INFO", critical=True)
+            self.terminal_log(f"ðŸŒ Broker UTC Offset changed to: {offset_str}", "INFO", critical=True)
+            self.terminal_log(f"   â†’ Saved to config/broker_timezone.json", "INFO", critical=True)
+            self.terminal_log(f"   â†’ Time filter will convert broker time to UTC before checking", "INFO", critical=True)
+            self.terminal_log(f"   â†’ Affects: EURUSD, AUDUSD, XAGUSD, USDCHF (assets with time filter enabled)", "INFO", critical=True)
         except Exception as e:
-            self.terminal_log(f"❌ Failed to save UTC offset: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Failed to save UTC offset: {str(e)}", "ERROR", critical=True)
             
     def parse_strategy_config(self, file_path, symbol):
         """Parse strategy configuration from file"""
@@ -911,7 +910,7 @@ class AdvancedMT5TradingMonitorGUI:
     
     def retry_load_config(self, symbol):
         """Retry loading configuration for a symbol with errors"""
-        self.terminal_log(f"🔄 {symbol}: Retrying configuration load...", "WARNING", critical=True)
+        self.terminal_log(f"ðŸ”„ {symbol}: Retrying configuration load...", "WARNING", critical=True)
         
         try:
             strategy_rel_path = f"strategies/sunrise_ogle_{symbol.lower()}.py"
@@ -925,36 +924,36 @@ class AdvancedMT5TradingMonitorGUI:
             if is_valid:
                 # Success! Update config and clear error state
                 self.strategy_configs[symbol] = config
-                self.terminal_log(f"✅ {symbol}: Configuration RECOVERED - Trading ENABLED", "SUCCESS", critical=True)
+                self.terminal_log(f"âœ… {symbol}: Configuration RECOVERED - Trading ENABLED", "SUCCESS", critical=True)
                 return True
             else:
                 # Still missing params
                 self.config_errors[symbol]['last_retry'] = datetime.now()
-                self.terminal_log(f"❌ {symbol}: Still missing parameters: {missing_params}", "ERROR", critical=True)
-                self.terminal_log(f"⏳ {symbol}: Next retry in {CONFIG_RETRY_INTERVAL // 60} minutes", "WARNING", critical=True)
+                self.terminal_log(f"âŒ {symbol}: Still missing parameters: {missing_params}", "ERROR", critical=True)
+                self.terminal_log(f"â³ {symbol}: Next retry in {CONFIG_RETRY_INTERVAL // 60} minutes", "WARNING", critical=True)
                 return False
                 
         except Exception as e:
             self.config_errors[symbol]['last_retry'] = datetime.now()
-            self.terminal_log(f"❌ {symbol}: Config retry FAILED - {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ {symbol}: Config retry FAILED - {str(e)}", "ERROR", critical=True)
             return False
         
     def initialize_mt5_connection(self):
         """Initialize MetaTrader5 connection"""
         if not DEPENDENCIES_AVAILABLE or mt5 is None:
-            self.terminal_log("❌ ERROR: Required dependencies not available", "ERROR")
+            self.terminal_log("âŒ ERROR: Required dependencies not available", "ERROR")
             return False
             
         try:
             # Initialize MT5
             if not mt5.initialize():  # type: ignore
-                self.terminal_log(f"❌ Failed to initialize MT5: {mt5.last_error()}", "ERROR")  # type: ignore
+                self.terminal_log(f"âŒ Failed to initialize MT5: {mt5.last_error()}", "ERROR")  # type: ignore
                 return False
                 
             # Get account info
             account_info = mt5.account_info()  # type: ignore
             if account_info is None:
-                self.terminal_log("❌ Failed to get account info", "ERROR")
+                self.terminal_log("âŒ Failed to get account info", "ERROR")
                 mt5.shutdown()  # type: ignore
                 return False
                 
@@ -962,7 +961,7 @@ class AdvancedMT5TradingMonitorGUI:
             self.connection_status_label.config(text="Connected", foreground="green")
             self.connect_button.config(text="Disconnect")
             
-            self.terminal_log(f"✅ Connected to MT5 - Account: {account_info.login}", "SUCCESS")
+            self.terminal_log(f"âœ… Connected to MT5 - Account: {account_info.login}", "SUCCESS")
             
             # Initialize signal processing if available
             self.initialize_signal_processing()
@@ -970,7 +969,7 @@ class AdvancedMT5TradingMonitorGUI:
             return True
             
         except Exception as e:
-            self.terminal_log(f"❌ Connection error: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Connection error: {str(e)}", "ERROR")
             return False
             
     def initialize_signal_processing(self):
@@ -987,12 +986,12 @@ class AdvancedMT5TradingMonitorGUI:
                         try:
                             self.signal_manager.add_symbol(symbol)
                         except Exception as e:
-                            self.terminal_log(f"⚠️ Could not add {symbol}: {str(e)}", "ERROR")
+                            self.terminal_log(f"âš ï¸ Could not add {symbol}: {str(e)}", "ERROR")
                     
-                    self.terminal_log("✅ Signal processing initialized", "SUCCESS")
+                    self.terminal_log("âœ… Signal processing initialized", "SUCCESS")
                     
         except Exception as e:
-            self.terminal_log(f"⚠️ Signal processing error: {str(e)}", "ERROR")
+            self.terminal_log(f"âš ï¸ Signal processing error: {str(e)}", "ERROR")
 
     def attempt_reconnect(self):
         """Attempt to re-establish MT5 connection after IPC failure
@@ -1007,7 +1006,7 @@ class AdvancedMT5TradingMonitorGUI:
         """
         # Check retry limit
         if self.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
-            self.terminal_log(f"❌ Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached - Manual intervention required", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached - Manual intervention required", "ERROR", critical=True)
             self.terminal_log("   Please check MT5 terminal and restart the bot", "ERROR", critical=True)
             return False
         
@@ -1016,7 +1015,7 @@ class AdvancedMT5TradingMonitorGUI:
         # Calculate backoff with exponential increase
         backoff = RECONNECT_BACKOFF_SECONDS * (2 ** (self.reconnect_attempts - 1))
         
-        self.terminal_log(f"🔄 CONNECTION LOST: Reconnect attempt {self.reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS} (backoff: {backoff}s)", "WARNING", critical=True)
+        self.terminal_log(f"ðŸ”„ CONNECTION LOST: Reconnect attempt {self.reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS} (backoff: {backoff}s)", "WARNING", critical=True)
         
         try:
             # Force shutdown of existing connection
@@ -1026,21 +1025,21 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Attempt re-initialization
             if mt5.initialize():
-                self.terminal_log("✅ Reconnection successful - Resuming monitoring", "SUCCESS", critical=True)
+                self.terminal_log("âœ… Reconnection successful - Resuming monitoring", "SUCCESS", critical=True)
                 self.mt5_connected = True
                 self.reconnect_attempts = 0  # Reset counter on success
                 # Update GUI from main thread
                 self.root.after(0, lambda: self.connection_status_label.config(text="Connected", foreground="green"))
                 return True
             else:
-                self.terminal_log(f"❌ Reconnection failed: {mt5.last_error()}", "ERROR", critical=True)
+                self.terminal_log(f"âŒ Reconnection failed: {mt5.last_error()}", "ERROR", critical=True)
                 return False
         except Exception as e:
-            self.terminal_log(f"❌ Reconnection error: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Reconnection error: {str(e)}", "ERROR", critical=True)
             return False
 
     def save_strategy_state(self):
-        """💾 PERSISTENCE: Save current strategy state to JSON file
+        """ðŸ’¾ PERSISTENCE: Save current strategy state to JSON file
         
         Features:
         - Atomic write (temp file + rename) to prevent corruption
@@ -1091,10 +1090,10 @@ class AdvancedMT5TradingMonitorGUI:
                 os.remove(state_file)
             os.rename(temp_file, state_file)
                 
-            # self.terminal_log("💾 Strategy state saved to disk", "DEBUG")
+            # self.terminal_log("ðŸ’¾ Strategy state saved to disk", "DEBUG")
             
         except Exception as e:
-            self.terminal_log(f"❌ Failed to save strategy state: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Failed to save strategy state: {str(e)}", "ERROR")
             # Clean up temp file if it exists
             try:
                 if os.path.exists(temp_file):
@@ -1103,7 +1102,7 @@ class AdvancedMT5TradingMonitorGUI:
                 pass
 
     def load_strategy_state(self):
-        """💾 PERSISTENCE: Load strategy state from JSON file with STALE CHECK
+        """ðŸ’¾ PERSISTENCE: Load strategy state from JSON file with STALE CHECK
         
         Features:
         - Uses configurable STATE_MAX_AGE_MINUTES for expiry
@@ -1113,7 +1112,7 @@ class AdvancedMT5TradingMonitorGUI:
         """
         state_file = os.path.join(os.getcwd(), STATE_FILE_NAME)
         if not os.path.exists(state_file):
-            self.terminal_log("ℹ️ No previous state file found - Starting fresh", "INFO")
+            self.terminal_log("â„¹ï¸ No previous state file found - Starting fresh", "INFO")
             return
             
         try:
@@ -1140,10 +1139,10 @@ class AdvancedMT5TradingMonitorGUI:
                             if age_minutes > STATE_MAX_AGE_MINUTES:
                                 is_stale = True
                                 expired_count += 1
-                                self.terminal_log(f"⚠️ {symbol}: Memory is stale ({age_minutes:.0f} min old) - Discarding", "WARNING")
+                                self.terminal_log(f"âš ï¸ {symbol}: Memory is stale ({age_minutes:.0f} min old) - Discarding", "WARNING")
                         except (ValueError, TypeError) as e:
                             is_stale = True  # If date parse fails, assume stale
-                            self.terminal_log(f"⚠️ {symbol}: Invalid date format in saved state - Discarding", "WARNING")
+                            self.terminal_log(f"âš ï¸ {symbol}: Invalid date format in saved state - Discarding", "WARNING")
                     else:
                         is_stale = True  # No last_update = stale
                     
@@ -1154,7 +1153,7 @@ class AdvancedMT5TradingMonitorGUI:
                     saved_entry_state = s_data.get('entry_state', 'SCANNING')
                     if saved_entry_state not in VALID_ENTRY_STATES:
                         invalid_count += 1
-                        self.terminal_log(f"⚠️ {symbol}: Invalid entry_state '{saved_entry_state}' - Resetting to SCANNING", "WARNING")
+                        self.terminal_log(f"âš ï¸ {symbol}: Invalid entry_state '{saved_entry_state}' - Resetting to SCANNING", "WARNING")
                         continue  # Skip loading, leave as SCANNING
                     
                     # Restore critical state variables
@@ -1185,24 +1184,24 @@ class AdvancedMT5TradingMonitorGUI:
                     loaded_count += 1
             
             if loaded_count > 0:
-                self.terminal_log(f"💾 RESTORED MEMORY: Loaded state for {loaded_count} assets", "SUCCESS", critical=True)
+                self.terminal_log(f"ðŸ’¾ RESTORED MEMORY: Loaded state for {loaded_count} assets", "SUCCESS", critical=True)
                 if expired_count > 0:
-                    self.terminal_log(f"🗑️ EXPIRED MEMORY: Discarded {expired_count} stale states (> {STATE_MAX_AGE_MINUTES} min)", "WARNING", critical=True)
+                    self.terminal_log(f"ðŸ—‘ï¸ EXPIRED MEMORY: Discarded {expired_count} stale states (> {STATE_MAX_AGE_MINUTES} min)", "WARNING", critical=True)
                 if invalid_count > 0:
-                    self.terminal_log(f"⚠️ INVALID MEMORY: Reset {invalid_count} assets with invalid states", "WARNING", critical=True)
+                    self.terminal_log(f"âš ï¸ INVALID MEMORY: Reset {invalid_count} assets with invalid states", "WARNING", critical=True)
                 self.update_strategy_displays()
             else:
-                self.terminal_log("ℹ️ Memory found but all states were stale/expired - Starting fresh", "INFO")
+                self.terminal_log("â„¹ï¸ Memory found but all states were stale/expired - Starting fresh", "INFO")
                 
         except json.JSONDecodeError as e:
-            self.terminal_log(f"❌ Corrupted state file (invalid JSON): {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Corrupted state file (invalid JSON): {str(e)}", "ERROR")
         except IOError as e:
-            self.terminal_log(f"❌ Failed to read strategy state file: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Failed to read strategy state file: {str(e)}", "ERROR")
         except Exception as e:
-            self.terminal_log(f"❌ Failed to load strategy state: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Failed to load strategy state: {str(e)}", "ERROR")
 
     def reset_strategy_memory(self):
-        """🗑️ MANUAL RESET: Wipe memory file and reset all states"""
+        """ðŸ—‘ï¸ MANUAL RESET: Wipe memory file and reset all states"""
         if messagebox.askyesno("Reset Memory", "Are you sure you want to wipe all strategy memory?\n\nThis will reset all assets to 'SCANNING' phase."):
             try:
                 # 1. Delete the file (use STATE_FILE_NAME constant)
@@ -1223,20 +1222,20 @@ class AdvancedMT5TradingMonitorGUI:
                 self.reconnect_attempts = 0
                 
                 self.update_strategy_displays()
-                self.terminal_log("🗑️ MEMORY WIPED: All strategies reset to SCANNING", "WARNING", critical=True)
+                self.terminal_log("ðŸ—‘ï¸ MEMORY WIPED: All strategies reset to SCANNING", "WARNING", critical=True)
             except Exception as e:
-                self.terminal_log(f"❌ Reset failed: {str(e)}", "ERROR")
+                self.terminal_log(f"âŒ Reset failed: {str(e)}", "ERROR")
             
     def start_monitoring(self):
         """Start the advanced monitoring process"""
         if not self.mt5_connected:
-            self.terminal_log("❌ Cannot start monitoring: Not connected to MT5", "ERROR")
+            self.terminal_log("âŒ Cannot start monitoring: Not connected to MT5", "ERROR")
             return
             
         if self.monitoring_active:
             return
             
-        # 💾 PERSISTENCE: Try to load previous state
+        # ðŸ’¾ PERSISTENCE: Try to load previous state
         self.load_strategy_state()
             
         self.monitoring_active = True
@@ -1253,21 +1252,21 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Startup Summary
         self.terminal_log("=" * 70, "SUCCESS", critical=True)
-        self.terminal_log(f"🚀 MT5 TRADING BOT v{APP_VERSION} - SUNRISE OGLE STRATEGY ACTIVATED", "SUCCESS", critical=True)
+        self.terminal_log(f"ðŸš€ MT5 TRADING BOT v{APP_VERSION} - SUNRISE OGLE STRATEGY ACTIVATED", "SUCCESS", critical=True)
         self.terminal_log("=" * 70, "SUCCESS", critical=True)
-        self.terminal_log(f"📈 Monitored Pairs: {', '.join(self.strategy_states.keys())}", "INFO", critical=True)
-        self.terminal_log(f"⏱️ Timeframe: 5-Minute (M5)", "INFO", critical=True)
-        self.terminal_log(f"🎯 Strategy: 4-Phase State Machine (SCANNING → ARMED → PULLBACK → WINDOW → ENTRY)", "INFO", critical=True)
+        self.terminal_log(f"ðŸ“ˆ Monitored Pairs: {', '.join(self.strategy_states.keys())}", "INFO", critical=True)
+        self.terminal_log(f"â±ï¸ Timeframe: 5-Minute (M5)", "INFO", critical=True)
+        self.terminal_log(f"ðŸŽ¯ Strategy: 4-Phase State Machine (SCANNING â†’ ARMED â†’ PULLBACK â†’ WINDOW â†’ ENTRY)", "INFO", critical=True)
         self.terminal_log("", "INFO", critical=True)
-        self.terminal_log("📊 Tracking:", "INFO", critical=True)
-        self.terminal_log("   ✅ EMA crossover detection (Confirm vs Fast/Medium/Slow)", "INFO", critical=True)
-        self.terminal_log("   ✅ State transitions (ARMED_LONG/SHORT)", "INFO", critical=True)
-        self.terminal_log("   ✅ Pullback validation (bearish/bullish candles)", "INFO", critical=True)
-        self.terminal_log("   ✅ Breakout window monitoring", "INFO", critical=True)
-        self.terminal_log("   ✅ Global invalidation (counter-trend crossovers)", "INFO", critical=True)
+        self.terminal_log("ðŸ“Š Tracking:", "INFO", critical=True)
+        self.terminal_log("   âœ… EMA crossover detection (Confirm vs Fast/Medium/Slow)", "INFO", critical=True)
+        self.terminal_log("   âœ… State transitions (ARMED_LONG/SHORT)", "INFO", critical=True)
+        self.terminal_log("   âœ… Pullback validation (bearish/bullish candles)", "INFO", critical=True)
+        self.terminal_log("   âœ… Breakout window monitoring", "INFO", critical=True)
+        self.terminal_log("   âœ… Global invalidation (counter-trend crossovers)", "INFO", critical=True)
         self.terminal_log("", "INFO", critical=True)
-        self.terminal_log("💡 Note: Only key events shown. Full log in terminal_log.txt", "INFO", critical=True)
-        self.terminal_log("📊 Hourly summary will be displayed every 60 minutes", "INFO", critical=True)
+        self.terminal_log("ðŸ’¡ Note: Only key events shown. Full log in terminal_log.txt", "INFO", critical=True)
+        self.terminal_log("ðŸ“Š Hourly summary will be displayed every 60 minutes", "INFO", critical=True)
         self.terminal_log("=" * 70, "SUCCESS", critical=True)
         
     def stop_monitoring(self):
@@ -1275,7 +1274,7 @@ class AdvancedMT5TradingMonitorGUI:
         self.monitoring_active = False
         self.stop_event.set()
         
-        # 💾 PERSISTENCE: Save state on stop
+        # ðŸ’¾ PERSISTENCE: Save state on stop
         self.save_strategy_state()
         
         # Update GUI
@@ -1283,7 +1282,7 @@ class AdvancedMT5TradingMonitorGUI:
         self.stop_button.config(state=tk.DISABLED)
         self.status_label.config(text="Monitoring Stopped")
         
-        self.terminal_log("⏹️ Monitoring stopped", "NORMAL")
+        self.terminal_log("â¹ï¸ Monitoring stopped", "NORMAL")
         
     def advanced_monitoring_loop(self):
         """Advanced monitoring loop with strategy phase tracking
@@ -1299,7 +1298,7 @@ class AdvancedMT5TradingMonitorGUI:
                 current_minute = datetime.now().minute
                 current_second = datetime.now().second
                 
-                # ✅ SMART CANDLE DETECTION: Only check at candle close
+                # âœ… SMART CANDLE DETECTION: Only check at candle close
                 # M5 candles close when minute % 5 == 0 (0, 5, 10, 15, 20, etc.)
                 # Check in the first 10 seconds after close to catch the new candle
                 is_candle_close_time = (current_minute % 5 == 0) and (current_second <= 10)
@@ -1310,7 +1309,7 @@ class AdvancedMT5TradingMonitorGUI:
                     
                     # Log candle close detection (once per 5 minutes)
                     if last_candle_check.get('last_candle_log') != check_key:
-                        self.terminal_log(f"⏱️ CANDLE CLOSE DETECTED - Checking all symbols at {datetime.now().strftime('%H:%M:%S')}", 
+                        self.terminal_log(f"â±ï¸ CANDLE CLOSE DETECTED - Checking all symbols at {datetime.now().strftime('%H:%M:%S')}", 
                                         "INFO", critical=True)
                         last_candle_check['last_candle_log'] = check_key
                     
@@ -1321,7 +1320,7 @@ class AdvancedMT5TradingMonitorGUI:
                             self.monitor_strategy_phase(symbol)
                             last_candle_check[symbol] = check_key
                     
-                    # 💾 PERSISTENCE: Save state after processing candle close
+                    # ðŸ’¾ PERSISTENCE: Save state after processing candle close
                     self.save_strategy_state()
                     
                     # Update displays after checking all symbols
@@ -1332,12 +1331,12 @@ class AdvancedMT5TradingMonitorGUI:
                     self.log_phase_summary()
                     last_summary = time.time()
                 
-                # ✅ OPTIMIZED: Sleep 5 seconds (instead of 2)
+                # âœ… OPTIMIZED: Sleep 5 seconds (instead of 2)
                 # We only need to check near candle close times
                 time.sleep(5)
                 
             except Exception as e:
-                self.terminal_log(f"❌ Monitoring error: {str(e)}", "ERROR")
+                self.terminal_log(f"âŒ Monitoring error: {str(e)}", "ERROR")
                 time.sleep(5)
                 
     def monitor_strategy_phase(self, symbol):
@@ -1346,7 +1345,7 @@ class AdvancedMT5TradingMonitorGUI:
             if not mt5 or pd is None:
                 return
             
-            # 🛡️ CRITICAL: Check config validity before any trading logic
+            # ðŸ›¡ï¸ CRITICAL: Check config validity before any trading logic
             config = self.strategy_configs.get(symbol, {})
             
             # Check if config has errors
@@ -1364,77 +1363,77 @@ class AdvancedMT5TradingMonitorGUI:
                     error_info = self.config_errors.get(symbol, {})
                     if not error_info.get('error_logged', False):
                         missing = config.get('_missing_params', error_info.get('missing_params', ['unknown']))
-                        self.terminal_log(f"⏸️ {symbol}: Trading PAUSED - Missing params: {missing}", "WARNING")
+                        self.terminal_log(f"â¸ï¸ {symbol}: Trading PAUSED - Missing params: {missing}", "WARNING")
                         if symbol in self.config_errors:
                             self.config_errors[symbol]['error_logged'] = True
                     return
             
-            # ⚡ PERFORMANCE OPTIMIZATION: Skip full data fetch if in WINDOW_OPEN
+            # âš¡ PERFORMANCE OPTIMIZATION: Skip full data fetch if in WINDOW_OPEN
             # When monitoring breakout window, we only need current price, not full indicator recalculation
             state = self.strategy_states.get(symbol, {})
             entry_state = state.get('entry_state', 'SCANNING')
             
             if entry_state == 'WINDOW_OPEN':
-                # 🔧 DEBUG: Log entry into fast path
+                # ðŸ”§ DEBUG: Log entry into fast path
                 window_start = state.get('window_bar_start', 'N/A')
                 window_expiry = state.get('window_expiry_bar', 'N/A')
                 current_bar = state.get('current_bar', 'N/A')
-                self.terminal_log(f"⚡ {symbol}: FAST PATH (WINDOW_OPEN) | Bar: {current_bar} | Window: {window_start}-{window_expiry}", 
+                self.terminal_log(f"âš¡ {symbol}: FAST PATH (WINDOW_OPEN) | Bar: {current_bar} | Window: {window_start}-{window_expiry}", 
                                 "DEBUG", critical=True)
                 
                 # Fast path: Fetch more bars for proper chart display (100 bars for charting)
                 # We need enough data to show the chart properly, not just 2-3 bars
                 rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 101)  # type: ignore
                 
-                # 🔄 RECONNECT LOGIC: Handle IPC failures
+                # ðŸ”„ RECONNECT LOGIC: Handle IPC failures
                 if rates is None:
                     error_code, error_msg = mt5.last_error()
                     if error_code == -10001 or "IPC send failed" in str(error_msg):
-                        self.terminal_log(f"⚠️ {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
+                        self.terminal_log(f"âš ï¸ {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
                         if self.attempt_reconnect():
                             # Retry fetch once
                             rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 101)
                 
                 if rates is None or len(rates) < 2:
-                    self.terminal_log(f"❌ {symbol}: Fast path failed - no data from MT5", "ERROR", critical=True)
+                    self.terminal_log(f"âŒ {symbol}: Fast path failed - no data from MT5", "ERROR", critical=True)
                     return
                 
                 # Convert to minimal DataFrame
                 df = pd.DataFrame(rates)  # type: ignore
                 df['time'] = pd.to_datetime(df['time'], unit='s')  # type: ignore
                 
-                # 🔧 DEBUG: Show fetched data
-                self.terminal_log(f"📊 {symbol}: Fetched {len(df)} bars | Last candle: {df['time'].iloc[-1]} | Close: {df['close'].iloc[-1]:.5f}", 
+                # ðŸ”§ DEBUG: Show fetched data
+                self.terminal_log(f"ðŸ“Š {symbol}: Fetched {len(df)} bars | Last candle: {df['time'].iloc[-1]} | Close: {df['close'].iloc[-1]:.5f}", 
                                 "DEBUG", critical=True)
                 
                 df = df.iloc[:-1].copy()  # Remove forming candle
                 
-                # 🔧 DEBUG: After removing forming candle
-                self.terminal_log(f"📊 {symbol}: After removing forming candle: {len(df)} bars | Last closed: {df['time'].iloc[-1]}", 
+                # ðŸ”§ DEBUG: After removing forming candle
+                self.terminal_log(f"ðŸ“Š {symbol}: After removing forming candle: {len(df)} bars | Last closed: {df['time'].iloc[-1]}", 
                                 "DEBUG", critical=True)
                 
-                # ⚡ CRITICAL: Increment bar counter for window expiry tracking
+                # âš¡ CRITICAL: Increment bar counter for window expiry tracking
                 # This must happen in fast path too, otherwise window never expires!
                 if len(df) > 0:
-                    current_candle_time = df['time'].iloc[-1]  # 🔧 FIX: Use actual timestamp, not df index
+                    current_candle_time = df['time'].iloc[-1]  # ðŸ”§ FIX: Use actual timestamp, not df index
                     
                     # Check if this is a new candle (timestamp changed)
                     if 'last_candle_time' not in state or state['last_candle_time'] != current_candle_time:
                         state['current_bar'] = state.get('current_bar', 0) + 1
                         state['last_candle_time'] = current_candle_time
-                        self.terminal_log(f"📈 {symbol}: Bar counter incremented to {state['current_bar']}", 
+                        self.terminal_log(f"ðŸ“ˆ {symbol}: Bar counter incremented to {state['current_bar']}", 
                                         "DEBUG", critical=True)
                 
                 # Reuse existing indicators (they don't change during window monitoring)
                 indicators = state.get('indicators', {})
                 if not indicators:
                     # Fallback: If no indicators cached, do full fetch (shouldn't happen)
-                    self.terminal_log(f"⚠️ {symbol}: No cached indicators in WINDOW_OPEN, doing full fetch", 
+                    self.terminal_log(f"âš ï¸ {symbol}: No cached indicators in WINDOW_OPEN, doing full fetch", 
                                     "WARNING", critical=True)
                     # Fall through to full fetch below
                 else:
                     # Quick window check with cached indicators
-                    self.terminal_log(f"🔍 {symbol}: Calling determine_strategy_phase with {len(df)} bars", 
+                    self.terminal_log(f"ðŸ” {symbol}: Calling determine_strategy_phase with {len(df)} bars", 
                                     "DEBUG", critical=True)
                     current_phase = self.determine_strategy_phase(symbol, df, indicators)
                     
@@ -1449,7 +1448,7 @@ class AdvancedMT5TradingMonitorGUI:
                         'timestamp': datetime.now()
                     }
                     
-                    # ⚡ AUTO-REFRESH CHART: Update chart if this symbol is currently displayed
+                    # âš¡ AUTO-REFRESH CHART: Update chart if this symbol is currently displayed
                     if MATPLOTLIB_AVAILABLE and self.chart_symbol_var.get() == symbol:
                         self.root.after(0, self.refresh_chart)  # Thread-safe GUI update
                     
@@ -1457,38 +1456,38 @@ class AdvancedMT5TradingMonitorGUI:
                     state['indicators'] = indicators
                     state['last_update'] = datetime.now()
                     
-                    self.terminal_log(f"✅ {symbol}: Fast path completed successfully | Phase: {current_phase}", 
+                    self.terminal_log(f"âœ… {symbol}: Fast path completed successfully | Phase: {current_phase}", 
                                     "DEBUG", critical=True)
                     return  # Exit early, skip full processing
             
             # Full path: Fetch complete data for indicator calculation (SCANNING, ARMED states)
-            # ⚡ OPTIMIZED: Reduced from 501 to 151 bars
+            # âš¡ OPTIMIZED: Reduced from 501 to 151 bars
             # Longest EMA is Filter EMA (100) - we fetch 1.5x for stability (150 + 1 forming)
             # This reduces data processing by 70% while maintaining accuracy
             rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 151)  # type: ignore
             
-            # 🔄 RECONNECT LOGIC: Handle IPC failures
+            # ðŸ”„ RECONNECT LOGIC: Handle IPC failures
             if rates is None:
                 error_code, error_msg = mt5.last_error()
                 if error_code == -10001 or "IPC send failed" in str(error_msg):
-                    self.terminal_log(f"⚠️ {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
+                    self.terminal_log(f"âš ï¸ {symbol}: IPC Error detected - Attempting reconnect...", "WARNING", critical=True)
                     if self.attempt_reconnect():
                         # Retry fetch once
                         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 151)
             
             if rates is None:
                 error = mt5.last_error()  # type: ignore
-                self.terminal_log(f"⚠️ No chart data available for {symbol} - MT5 Error: {error}", "ERROR", critical=True)
+                self.terminal_log(f"âš ï¸ No chart data available for {symbol} - MT5 Error: {error}", "ERROR", critical=True)
                 return
             if len(rates) < 100:
-                self.terminal_log(f"⚠️ Insufficient data for {symbol} - Got {len(rates)} bars, need 100+", "ERROR", critical=True)
+                self.terminal_log(f"âš ï¸ Insufficient data for {symbol} - Got {len(rates)} bars, need 100+", "ERROR", critical=True)
                 return
                 
             # Convert to DataFrame
             df = pd.DataFrame(rates)  # type: ignore
             df['time'] = pd.to_datetime(df['time'], unit='s')  # type: ignore
             
-            # ✅ CRITICAL FIX: Remove the last (forming) candle to match MT5 behavior
+            # âœ… CRITICAL FIX: Remove the last (forming) candle to match MT5 behavior
             # MT5 indicators only use closed candles, not the forming one
             # This ensures EMAs calculated match MT5 exactly
             df = df.iloc[:-1].copy()  # Remove last row (forming candle)
@@ -1508,7 +1507,7 @@ class AdvancedMT5TradingMonitorGUI:
             if state['phase'] != current_phase:
                 # Phase changed - log transition with more detail
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                transition_msg = f"📊 {symbol}: {state['phase']} → {current_phase}"
+                transition_msg = f"ðŸ“Š {symbol}: {state['phase']} â†’ {current_phase}"
                 
                 # Add context based on phase
                 if current_phase == 'WAITING_PULLBACK':
@@ -1544,7 +1543,7 @@ class AdvancedMT5TradingMonitorGUI:
             state['last_update'] = datetime.now()
             
             # Store chart data with optimized history for visualization
-            # ⚡ OPTIMIZED: Reduced from 250 to 100 bars for better chart zoom
+            # âš¡ OPTIMIZED: Reduced from 250 to 100 bars for better chart zoom
             # 100 bars = 500 minutes = 8.3 hours of M5 data (perfect for intraday view)
             self.chart_data[symbol] = {
                 'df': df.tail(100),  # Show last 100 bars (much better zoom level)
@@ -1553,7 +1552,7 @@ class AdvancedMT5TradingMonitorGUI:
             }
             
         except Exception as e:
-            self.terminal_log(f"❌ {symbol} monitoring error: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ {symbol} monitoring error: {str(e)}", "ERROR")
     
     # ===================================================================
     # FILTER VALIDATION FUNCTIONS - Universal for all assets
@@ -1596,13 +1595,13 @@ class AdvancedMT5TradingMonitorGUI:
             
             if current_atr < min_atr or current_atr > max_atr:
                 self.terminal_log(
-                    f"❌ {symbol} {direction}: ATR {current_atr:.6f} outside range [{min_atr:.6f}, {max_atr:.6f}]", 
+                    f"âŒ {symbol} {direction}: ATR {current_atr:.6f} outside range [{min_atr:.6f}, {max_atr:.6f}]", 
                     "WARNING", critical=True
                 )
                 return False
             
             # Check ATR increment/decrement filters
-            # ⚠️ CRITICAL FIX: Calculate change from SIGNAL DETECTION, not previous bar
+            # âš ï¸ CRITICAL FIX: Calculate change from SIGNAL DETECTION, not previous bar
             # Matches strategy logic: self.entry_atr_increment = current_atr - self.signal_detection_atr
             
             state = self.strategy_states.get(symbol, {})
@@ -1621,7 +1620,7 @@ class AdvancedMT5TradingMonitorGUI:
                 if not pd.isna(prev_atr) and prev_atr > 0:
                     atr_change = current_atr - prev_atr
                     has_valid_change = True
-                    self.terminal_log(f"⚠️ {symbol}: Using 1-bar ATR change (Signal ATR missing)", "DEBUG")
+                    self.terminal_log(f"âš ï¸ {symbol}: Using 1-bar ATR change (Signal ATR missing)", "DEBUG")
             
             if has_valid_change:
                 # Increment filter (positive changes)
@@ -1632,12 +1631,12 @@ class AdvancedMT5TradingMonitorGUI:
                     
                     if atr_change < min_incr or atr_change > max_incr:
                         self.terminal_log(
-                            f"❌ {symbol} {direction}: ATR increment {atr_change:+.6f} outside range [{min_incr:.6f}, {max_incr:.6f}]", 
+                            f"âŒ {symbol} {direction}: ATR increment {atr_change:+.6f} outside range [{min_incr:.6f}, {max_incr:.6f}]", 
                             "WARNING", critical=True
                         )
                         return False
                     else:
-                        self.terminal_log(f"✅ {symbol} {direction}: ATR increment {atr_change:+.6f} OK [{min_incr:.6f}, {max_incr:.6f}]", "INFO")
+                        self.terminal_log(f"âœ… {symbol} {direction}: ATR increment {atr_change:+.6f} OK [{min_incr:.6f}, {max_incr:.6f}]", "INFO")
                 
                 # Decrement filter (negative changes)
                 decr_key = f'{direction}_USE_ATR_DECREMENT_FILTER'
@@ -1647,18 +1646,18 @@ class AdvancedMT5TradingMonitorGUI:
                     
                     if atr_change < min_decr or atr_change > max_decr:
                         self.terminal_log(
-                            f"❌ {symbol} {direction}: ATR decrement {atr_change:+.6f} outside range [{min_decr:.6f}, {max_decr:.6f}]", 
+                            f"âŒ {symbol} {direction}: ATR decrement {atr_change:+.6f} outside range [{min_decr:.6f}, {max_decr:.6f}]", 
                             "WARNING", critical=True
                         )
                         return False
                     else:
-                        self.terminal_log(f"✅ {symbol} {direction}: ATR decrement {atr_change:+.6f} OK [{min_decr:.6f}, {max_decr:.6f}]", "INFO")
+                        self.terminal_log(f"âœ… {symbol} {direction}: ATR decrement {atr_change:+.6f} OK [{min_decr:.6f}, {max_decr:.6f}]", "INFO")
             
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: ATR filter error: {str(e)}", "WARNING")
-            return False  # 🛡️ FIX: On error, BLOCK trade (Originals would not trade on error)
+            self.terminal_log(f"âš ï¸ {symbol}: ATR filter error: {str(e)}", "WARNING")
+            return False  # ðŸ›¡ï¸ FIX: On error, BLOCK trade (Originals would not trade on error)
     
     def _validate_angle_filter(self, symbol, df, direction='LONG'):
         """Validate EMA angle filter - UNIVERSAL for all assets
@@ -1705,7 +1704,7 @@ class AdvancedMT5TradingMonitorGUI:
             # Check range
             if angle < min_angle or angle > max_angle:
                 self.terminal_log(
-                    f"❌ {symbol} {direction}: Angle {angle:.1f}° outside range [{min_angle:.1f}°, {max_angle:.1f}°]", 
+                    f"âŒ {symbol} {direction}: Angle {angle:.1f}Â° outside range [{min_angle:.1f}Â°, {max_angle:.1f}Â°]", 
                     "WARNING", critical=True
                 )
                 return False
@@ -1713,8 +1712,8 @@ class AdvancedMT5TradingMonitorGUI:
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: Angle filter error: {str(e)}", "WARNING")
-            return False  # 🛡️ FIX: On error, BLOCK trade
+            self.terminal_log(f"âš ï¸ {symbol}: Angle filter error: {str(e)}", "WARNING")
+            return False  # ðŸ›¡ï¸ FIX: On error, BLOCK trade
     
     def _validate_price_filter(self, symbol, df, direction='LONG'):
         """Validate price vs filter EMA - UNIVERSAL for all assets
@@ -1754,14 +1753,14 @@ class AdvancedMT5TradingMonitorGUI:
             if direction == 'LONG':
                 if current_close <= filter_ema:
                     self.terminal_log(
-                        f"❌ {symbol} LONG: Price {current_close:.5f} <= Filter EMA({filter_period}) {filter_ema:.5f}", 
+                        f"âŒ {symbol} LONG: Price {current_close:.5f} <= Filter EMA({filter_period}) {filter_ema:.5f}", 
                         "WARNING", critical=True
                     )
                     return False
             elif direction == 'SHORT':
                 if current_close >= filter_ema:
                     self.terminal_log(
-                        f"❌ {symbol} SHORT: Price {current_close:.5f} >= Filter EMA({filter_period}) {filter_ema:.5f}", 
+                        f"âŒ {symbol} SHORT: Price {current_close:.5f} >= Filter EMA({filter_period}) {filter_ema:.5f}", 
                         "WARNING", critical=True
                     )
                     return False
@@ -1769,8 +1768,8 @@ class AdvancedMT5TradingMonitorGUI:
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: Price filter error: {str(e)}", "WARNING")
-            return False  # 🛡️ FIX: On error, BLOCK trade
+            self.terminal_log(f"âš ï¸ {symbol}: Price filter error: {str(e)}", "WARNING")
+            return False  # ðŸ›¡ï¸ FIX: On error, BLOCK trade
     
     def _validate_candle_direction(self, symbol, df, direction='LONG'):
         """Validate previous candle direction - UNIVERSAL for all assets
@@ -1802,14 +1801,14 @@ class AdvancedMT5TradingMonitorGUI:
             if direction == 'LONG':
                 if prev_close <= prev_open:
                     self.terminal_log(
-                        f"❌ {symbol} LONG: Previous candle not bullish (C:{prev_close:.5f} <= O:{prev_open:.5f})", 
+                        f"âŒ {symbol} LONG: Previous candle not bullish (C:{prev_close:.5f} <= O:{prev_open:.5f})", 
                         "WARNING", critical=True
                     )
                     return False
             elif direction == 'SHORT':
                 if prev_close >= prev_open:
                     self.terminal_log(
-                        f"❌ {symbol} SHORT: Previous candle not bearish (C:{prev_close:.5f} >= O:{prev_open:.5f})", 
+                        f"âŒ {symbol} SHORT: Previous candle not bearish (C:{prev_close:.5f} >= O:{prev_open:.5f})", 
                         "WARNING", critical=True
                     )
                     return False
@@ -1817,8 +1816,8 @@ class AdvancedMT5TradingMonitorGUI:
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: Candle direction filter error: {str(e)}", "WARNING")
-            return False  # 🛡️ FIX: On error, BLOCK trade
+            self.terminal_log(f"âš ï¸ {symbol}: Candle direction filter error: {str(e)}", "WARNING")
+            return False  # ðŸ›¡ï¸ FIX: On error, BLOCK trade
     
     def _validate_ema_ordering(self, symbol, ema_confirm, ema_fast, ema_medium, ema_slow, direction='LONG'):
         """Validate EMA ordering - UNIVERSAL for all assets
@@ -1844,28 +1843,28 @@ class AdvancedMT5TradingMonitorGUI:
                 # (Not strict stacking like Confirm > Fast > Medium > Slow)
                 if not (ema_confirm > ema_fast and ema_confirm > ema_medium and ema_confirm > ema_slow):
                     self.terminal_log(
-                        f"❌ {symbol} LONG: EMA ordering failed (Confirm not above all others)", 
+                        f"âŒ {symbol} LONG: EMA ordering failed (Confirm not above all others)", 
                         "WARNING", critical=True
                     )
                     return False
                 else:
-                    self.terminal_log(f"✅ {symbol} LONG: EMA ordering OK", "INFO")
+                    self.terminal_log(f"âœ… {symbol} LONG: EMA ordering OK", "INFO")
             elif direction == 'SHORT':
                 # Match original strategy: Confirm < Fast AND Confirm < Medium AND Confirm < Slow
                 if not (ema_confirm < ema_fast and ema_confirm < ema_medium and ema_confirm < ema_slow):
                     self.terminal_log(
-                        f"❌ {symbol} SHORT: EMA ordering failed (Confirm not below all others)", 
+                        f"âŒ {symbol} SHORT: EMA ordering failed (Confirm not below all others)", 
                         "WARNING", critical=True
                     )
                     return False
                 else:
-                    self.terminal_log(f"✅ {symbol} SHORT: EMA ordering OK", "INFO")
+                    self.terminal_log(f"âœ… {symbol} SHORT: EMA ordering OK", "INFO")
             
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: EMA ordering filter error: {str(e)}", "WARNING")
-            return False  # 🛡️ FIX: On error, BLOCK trade
+            self.terminal_log(f"âš ï¸ {symbol}: EMA ordering filter error: {str(e)}", "WARNING")
+            return False  # ðŸ›¡ï¸ FIX: On error, BLOCK trade
     
     def _validate_ema_position_filter(self, symbol, df, ema_fast, ema_medium, ema_slow, direction='LONG'):
         """Validate EMA position relative to price - UNIVERSAL for all assets
@@ -1892,11 +1891,11 @@ class AdvancedMT5TradingMonitorGUI:
                     
                 # Check if Price is ABOVE all EMAs
                 if current_close > ema_fast and current_close > ema_medium and current_close > ema_slow:
-                    self.terminal_log(f"✅ {symbol} LONG: Price {current_close:.5f} > All EMAs", "INFO")
+                    self.terminal_log(f"âœ… {symbol} LONG: Price {current_close:.5f} > All EMAs", "INFO")
                     return True
                 else:
                     self.terminal_log(
-                        f"❌ {symbol} LONG: Price {current_close:.5f} not above all EMAs (F:{ema_fast:.5f}, M:{ema_medium:.5f}, S:{ema_slow:.5f})", 
+                        f"âŒ {symbol} LONG: Price {current_close:.5f} not above all EMAs (F:{ema_fast:.5f}, M:{ema_medium:.5f}, S:{ema_slow:.5f})", 
                         "WARNING", critical=True
                     )
                     return False
@@ -1908,11 +1907,11 @@ class AdvancedMT5TradingMonitorGUI:
                     
                 # Check if Price is BELOW all EMAs
                 if current_close < ema_fast and current_close < ema_medium and current_close < ema_slow:
-                    self.terminal_log(f"✅ {symbol} SHORT: Price {current_close:.5f} < All EMAs", "INFO")
+                    self.terminal_log(f"âœ… {symbol} SHORT: Price {current_close:.5f} < All EMAs", "INFO")
                     return True
                 else:
                     self.terminal_log(
-                        f"❌ {symbol} SHORT: Price {current_close:.5f} not below all EMAs (F:{ema_fast:.5f}, M:{ema_medium:.5f}, S:{ema_slow:.5f})", 
+                        f"âŒ {symbol} SHORT: Price {current_close:.5f} not below all EMAs (F:{ema_fast:.5f}, M:{ema_medium:.5f}, S:{ema_slow:.5f})", 
                         "WARNING", critical=True
                     )
                     return False
@@ -1920,8 +1919,8 @@ class AdvancedMT5TradingMonitorGUI:
             return True
             
         except Exception as e:
-            self.terminal_log(f"⚠️ {symbol}: EMA position filter error: {str(e)}", "WARNING")
-            return False  # 🛡️ FIX: On error, BLOCK trade
+            self.terminal_log(f"âš ï¸ {symbol}: EMA position filter error: {str(e)}", "WARNING")
+            return False  # ðŸ›¡ï¸ FIX: On error, BLOCK trade
 
     def _validate_time_filter(self, symbol, current_dt, direction):
         """Validate if current time is within allowed trading hours (UTC)
@@ -1969,20 +1968,20 @@ class AdvancedMT5TradingMonitorGUI:
                 is_allowed = start_minutes <= current_minutes <= end_minutes
                 
             if not is_allowed:
-                self.terminal_log(f"⏰ {symbol}: Outside trading hours (UTC). Current UTC: {strategy_time_utc.strftime('%H:%M')} | Allowed: {start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d}", 
+                self.terminal_log(f"â° {symbol}: Outside trading hours (UTC). Current UTC: {strategy_time_utc.strftime('%H:%M')} | Allowed: {start_hour:02d}:{start_min:02d}-{end_hour:02d}:{end_min:02d}", 
                                 "WARNING", critical=False)
                 return False
                 
             return True
             
         except Exception as e:
-            self.terminal_log(f"❌ Time filter error: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Time filter error: {str(e)}", "ERROR", critical=True)
             return True # Fail safe: allow trade if filter fails
             
     def detect_ema_crossovers(self, symbol, indicators, df):
         """Detect EMA crossovers ONLY ON CLOSED CANDLES (matching Backtrader behavior)
         
-        ⚠️ CRITICAL: In Backtrader, next() is called once per CLOSED CANDLE, not per tick.
+        âš ï¸ CRITICAL: In Backtrader, next() is called once per CLOSED CANDLE, not per tick.
         For M5 timeframe: next() every 5 minutes (when candle closes)
         For H1 timeframe: next() every 60 minutes (when candle closes)
         
@@ -1995,7 +1994,7 @@ class AdvancedMT5TradingMonitorGUI:
             return
         
         try:
-            # ⚠️ CRITICAL: df already has forming candle removed at line 747!
+            # âš ï¸ CRITICAL: df already has forming candle removed at line 747!
             # So df.iloc[-1] IS the last CLOSED candle, not forming candle
             # Don't use iloc[-2] or df[:-1] or we'll process old data!
             current_closed_candle_time = df['time'].iloc[-1] if len(df) >= 1 else None
@@ -2009,13 +2008,13 @@ class AdvancedMT5TradingMonitorGUI:
                 return
             
             # NEW CLOSED CANDLE - process crossovers
-            # self.terminal_log(f"🕐 {symbol}: New closed candle detected at {current_closed_candle_time} - checking crossovers", 
+            # self.terminal_log(f"ðŸ• {symbol}: New closed candle detected at {current_closed_candle_time} - checking crossovers", 
             #                 "INFO", critical=False)
             
             # Mark this candle as processed
             state['last_crossover_check_candle'] = current_closed_candle_time
             
-            # ⚠️ CRITICAL: df already contains ONLY closed candles (forming removed at line 747)
+            # âš ï¸ CRITICAL: df already contains ONLY closed candles (forming removed at line 747)
             # Use df directly, don't remove another candle!
             df_closed = df
             
@@ -2082,7 +2081,7 @@ class AdvancedMT5TradingMonitorGUI:
                 bearish_count += 1
                 bearish_crossover = True
             
-            # ✅ CRITICAL: Ignore crossovers that happened BEFORE bot startup
+            # âœ… CRITICAL: Ignore crossovers that happened BEFORE bot startup
             # This prevents "stale" signals from triggering setups on restart
             crossover_is_stale = False
             if hasattr(self, 'bot_startup_time') and isinstance(self.bot_startup_time, datetime):
@@ -2118,7 +2117,7 @@ class AdvancedMT5TradingMonitorGUI:
                     else:
                         ema_names = ["Slow"]
                 
-                self.terminal_log(f"� {symbol}: Confirm EMA CROSSED ABOVE {'/'.join(ema_names)} EMA - BULLISH! (Candle: {current_closed_candle_time})", 
+                self.terminal_log(f"ï¿½ {symbol}: Confirm EMA CROSSED ABOVE {'/'.join(ema_names)} EMA - BULLISH! (Candle: {current_closed_candle_time})", 
                                 "SUCCESS", critical=True)
             
             if bearish_count > 0:
@@ -2140,7 +2139,7 @@ class AdvancedMT5TradingMonitorGUI:
                     else:
                         ema_names = ["Slow"]
                 
-                self.terminal_log(f"🔴 {symbol}: Confirm EMA CROSSED BELOW {'/'.join(ema_names)} EMA - BEARISH! (Candle: {current_closed_candle_time})", 
+                self.terminal_log(f"ðŸ”´ {symbol}: Confirm EMA CROSSED BELOW {'/'.join(ema_names)} EMA - BEARISH! (Candle: {current_closed_candle_time})", 
                                 "ERROR", critical=True)
             
             # ===================================================================
@@ -2153,7 +2152,7 @@ class AdvancedMT5TradingMonitorGUI:
             else:
                 current_dt = datetime.now()
             
-            # ⚠️ CRITICAL FIX: Add ATR to df_closed for filter validation
+            # âš ï¸ CRITICAL FIX: Add ATR to df_closed for filter validation
             # The indicators dict has ATR but df_closed doesn't have it as a column
             if indicators and 'atr' in indicators and len(df_closed) > 0:
                 df_closed = df_closed.copy()  # Avoid modifying original
@@ -2161,49 +2160,49 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Validate BULLISH crossovers (LONG direction)
             if bullish_crossover and not crossover_is_stale:
-                self.terminal_log(f"🔍 {symbol}: Bullish crossover detected - validating ALL filters...", 
+                self.terminal_log(f"ðŸ” {symbol}: Bullish crossover detected - validating ALL filters...", 
                                 "INFO", critical=True)
                 
                 all_filters_passed = True
                 
                 # 1. ATR Filter
                 atr_passed = self._validate_atr_filter(symbol, df_closed, 'LONG')
-                self.terminal_log(f"   📊 {symbol}: ATR filter → {'✅ PASS' if atr_passed else '❌ FAIL'}", 
+                self.terminal_log(f"   ðŸ“Š {symbol}: ATR filter â†’ {'âœ… PASS' if atr_passed else 'âŒ FAIL'}", 
                                 "DEBUG", critical=True)
                 if not atr_passed:
                     all_filters_passed = False
                 
                 # 2. Angle Filter
                 angle_passed = self._validate_angle_filter(symbol, df_closed, 'LONG')
-                self.terminal_log(f"   📐 {symbol}: Angle filter → {'✅ PASS' if angle_passed else '❌ FAIL'}", 
+                self.terminal_log(f"   ðŸ“ {symbol}: Angle filter â†’ {'âœ… PASS' if angle_passed else 'âŒ FAIL'}", 
                                 "DEBUG", critical=True)
                 if not angle_passed:
                     all_filters_passed = False
                 
                 # 3. Price Filter
                 price_passed = self._validate_price_filter(symbol, df_closed, 'LONG')
-                self.terminal_log(f"   💰 {symbol}: Price filter → {'✅ PASS' if price_passed else '❌ FAIL'}", 
+                self.terminal_log(f"   ðŸ’° {symbol}: Price filter â†’ {'âœ… PASS' if price_passed else 'âŒ FAIL'}", 
                                 "DEBUG", critical=True)
                 if not price_passed:
                     all_filters_passed = False
                 
                 # 4. Candle Direction
                 candle_passed = self._validate_candle_direction(symbol, df_closed, 'LONG')
-                self.terminal_log(f"   🕯️ {symbol}: Candle Direction → {'✅ PASS' if candle_passed else '❌ FAIL'}", 
+                self.terminal_log(f"   ðŸ•¯ï¸ {symbol}: Candle Direction â†’ {'âœ… PASS' if candle_passed else 'âŒ FAIL'}", 
                                 "DEBUG", critical=True)
                 if not candle_passed:
                     all_filters_passed = False
                 
                 # 5. EMA Ordering
                 ema_order_passed = self._validate_ema_ordering(symbol, confirm_ema, fast_ema, medium_ema, slow_ema, 'LONG')
-                self.terminal_log(f"   📈 {symbol}: EMA Ordering → {'✅ PASS' if ema_order_passed else '❌ FAIL'}", 
+                self.terminal_log(f"   ðŸ“ˆ {symbol}: EMA Ordering â†’ {'âœ… PASS' if ema_order_passed else 'âŒ FAIL'}", 
                                 "DEBUG", critical=True)
                 if not ema_order_passed:
                     all_filters_passed = False
                 
                 # 6. EMA Position (new filter)
                 ema_position_passed = self._validate_ema_position_filter(symbol, df_closed, fast_ema, medium_ema, slow_ema, 'LONG')
-                self.terminal_log(f"   📏 {symbol}: EMA Position → {'✅ PASS' if ema_position_passed else '❌ FAIL'}", 
+                self.terminal_log(f"   ðŸ“ {symbol}: EMA Position â†’ {'âœ… PASS' if ema_position_passed else 'âŒ FAIL'}", 
                                 "DEBUG", critical=True)
                 if not ema_position_passed:
                     all_filters_passed = False
@@ -2213,21 +2212,21 @@ class AdvancedMT5TradingMonitorGUI:
                 
                 # Final decision
                 if all_filters_passed:
-                    self.terminal_log(f"✅ {symbol}: LONG crossover PASSED ALL FILTERS - Ready to ARM", 
+                    self.terminal_log(f"âœ… {symbol}: LONG crossover PASSED ALL FILTERS - Ready to ARM", 
                                     "SUCCESS", critical=True)
                 else:
                     bullish_crossover = False
-                    self.terminal_log(f"❌ {symbol}: LONG crossover REJECTED - One or more filters failed", 
+                    self.terminal_log(f"âŒ {symbol}: LONG crossover REJECTED - One or more filters failed", 
                                     "WARNING", critical=True)
             
             # ===================================================================
             # CRITICAL: BEARISH CROSSOVER HANDLING
             # ===================================================================
 
-            # ⚠️ IMPORTANT: We preserve bearish_crossover for GLOBAL INVALIDATION
+            # âš ï¸ IMPORTANT: We preserve bearish_crossover for GLOBAL INVALIDATION
             # (to reset ARMED_LONG states) but log that SHORTS are disabled
             if bearish_crossover:
-                self.terminal_log(f"⚠️ {symbol}: Bearish crossover detected - Will trigger GLOBAL INVALIDATION if ARMED_LONG", 
+                self.terminal_log(f"âš ï¸ {symbol}: Bearish crossover detected - Will trigger GLOBAL INVALIDATION if ARMED_LONG", 
                                 "INFO", critical=True)
                 # Note: Do NOT set bearish_crossover = False here!
                 # The state machine needs it to reset ARMED_LONG states
@@ -2246,7 +2245,7 @@ class AdvancedMT5TradingMonitorGUI:
                 }
             
         except Exception as e:
-            self.terminal_log(f"❌ Crossover detection error for {symbol}: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Crossover detection error for {symbol}: {str(e)}", "ERROR", critical=True)
     
     def calculate_indicators(self, df, symbol):
         """Calculate technical indicators using actual strategy parameters"""
@@ -2257,7 +2256,7 @@ class AdvancedMT5TradingMonitorGUI:
             config = self.strategy_configs.get(symbol, {})
             
             # Debug: log the config keys (remove after testing)
-            # self.terminal_log(f"📊 {symbol} config keys: {list(config.keys())}", "NORMAL")
+            # self.terminal_log(f"ðŸ“Š {symbol} config keys: {list(config.keys())}", "NORMAL")
             
             # Extract EMA periods from config (using correct parameter names from strategy)
             fast_period = self.extract_numeric_value(config.get('ema_fast_length', 
@@ -2267,23 +2266,23 @@ class AdvancedMT5TradingMonitorGUI:
             slow_period = self.extract_numeric_value(config.get('ema_slow_length', 
                                                     config.get('Slow EMA Period', '24')))
             
-            # ⚠️ WARNING: Check for redundant EMA periods
+            # âš ï¸ WARNING: Check for redundant EMA periods
             if fast_period == medium_period:
-                self.terminal_log(f"⚠️ {symbol}: Fast EMA ({fast_period}) equals Medium EMA ({medium_period}) - Trend Cloud ineffective", "WARNING")
+                self.terminal_log(f"âš ï¸ {symbol}: Fast EMA ({fast_period}) equals Medium EMA ({medium_period}) - Trend Cloud ineffective", "WARNING")
             filter_period = self.extract_numeric_value(config.get('ema_filter_price_length', 
                                                       config.get('Price Filter EMA Period', '100')))
             atr_period = self.extract_numeric_value(config.get('atr_length', 
                                                   config.get('ATR Period', '10')))
             
-            # self.terminal_log(f"📊 {symbol} periods - Fast: {fast_period}, Medium: {medium_period}, Slow: {slow_period}, Filter: {filter_period}, ATR: {atr_period}", "NORMAL")
+            # self.terminal_log(f"ðŸ“Š {symbol} periods - Fast: {fast_period}, Medium: {medium_period}, Slow: {slow_period}, Filter: {filter_period}, ATR: {atr_period}", "NORMAL")
             
             # Ensure we have enough data
             if df is None or len(df) < max(fast_period, medium_period, slow_period, filter_period, atr_period):
-                self.terminal_log(f"⚠️ Insufficient data for {symbol}: {len(df) if df is not None else 'None'} bars", "WARNING")
+                self.terminal_log(f"âš ï¸ Insufficient data for {symbol}: {len(df) if df is not None else 'None'} bars", "WARNING")
                 return indicators
             
             # Calculate EMAs with actual periods
-            # ✅ CRITICAL FIX: Use adjust=False to match standard EMA formula (MT5/backtrader)
+            # âœ… CRITICAL FIX: Use adjust=False to match standard EMA formula (MT5/backtrader)
             indicators['ema_fast'] = df['close'].ewm(span=fast_period, adjust=False).mean().iloc[-1]
             indicators['ema_medium'] = df['close'].ewm(span=medium_period, adjust=False).mean().iloc[-1]
             indicators['ema_slow'] = df['close'].ewm(span=slow_period, adjust=False).mean().iloc[-1]
@@ -2295,14 +2294,14 @@ class AdvancedMT5TradingMonitorGUI:
             indicators['ema_slow_period'] = slow_period
             indicators['ema_filter_period'] = filter_period
             
-            # 🔍 DEBUG: Log EMA(70) calculation details for comparison with MT5
+            # ðŸ” DEBUG: Log EMA(70) calculation details for comparison with MT5
             if symbol == "EURUSD" and len(df) > 0:
                 last_candle_time = df['time'].iloc[-1]
                 last_close = df['close'].iloc[-1]
                 ema_70 = indicators['ema_filter']
                 num_bars = len(df)
                 self.terminal_log(
-                    f"🔍 EMA(70) DEBUG - {symbol}: Time={last_candle_time}, "
+                    f"ðŸ” EMA(70) DEBUG - {symbol}: Time={last_candle_time}, "
                     f"Close={last_close:.5f}, EMA(70)={ema_70:.5f}, Bars={num_bars}",
                     "NORMAL"
                 )
@@ -2322,17 +2321,17 @@ class AdvancedMT5TradingMonitorGUI:
                     atr_value = true_range.tail(min(atr_period, len(true_range))).mean()
                     if pd.isna(atr_value) or atr_value <= 0:
                         atr_value = 0.0001  # Fallback minimum
-                        self.terminal_log(f"⚠️ {symbol}: ATR calculation returned invalid value, using fallback: {atr_value}", 
+                        self.terminal_log(f"âš ï¸ {symbol}: ATR calculation returned invalid value, using fallback: {atr_value}", 
                                         "WARNING", critical=True)
                 
                 indicators['atr'] = atr_value
                 
-                # 📊 LOG ATR for historical tracking
-                self.terminal_log(f"📊 ATR: {symbol} | Period={atr_period} | Value={atr_value:.5f} | Bars={len(df)}", 
+                # ðŸ“Š LOG ATR for historical tracking
+                self.terminal_log(f"ðŸ“Š ATR: {symbol} | Period={atr_period} | Value={atr_value:.5f} | Bars={len(df)}", 
                                 "INFO", critical=False)
             else:
                 indicators['atr'] = 0.0001
-                self.terminal_log(f"⚠️ {symbol}: Insufficient data for ATR, using fallback: 0.0001", 
+                self.terminal_log(f"âš ï¸ {symbol}: Insufficient data for ATR, using fallback: 0.0001", 
                                 "WARNING", critical=True)
                 
             indicators['atr_period'] = atr_period
@@ -2365,9 +2364,9 @@ class AdvancedMT5TradingMonitorGUI:
                 indicators['trend'] = 'SIDEWAYS'
                 
             # EMA array for charting
-            # ✅ CRITICAL FIX: Use adjust=False to match standard EMA formula (like MT5/backtrader)
+            # âœ… CRITICAL FIX: Use adjust=False to match standard EMA formula (like MT5/backtrader)
             # adjust=True (pandas default) uses weighted average that changes with history
-            # adjust=False uses recursive formula: EMA = α * Price + (1-α) * EMA_prev
+            # adjust=False uses recursive formula: EMA = Î± * Price + (1-Î±) * EMA_prev
             indicators['ema_fast_array'] = df['close'].ewm(span=fast_period, adjust=False).mean()
             indicators['ema_medium_array'] = df['close'].ewm(span=medium_period, adjust=False).mean()
             indicators['ema_slow_array'] = df['close'].ewm(span=slow_period, adjust=False).mean()
@@ -2381,10 +2380,10 @@ class AdvancedMT5TradingMonitorGUI:
             self.detect_ema_crossovers(symbol, indicators, df)
             
             # This message is now filtered as non-critical
-            self.terminal_log(f"✅ {symbol} indicators calculated successfully", "SUCCESS")
+            self.terminal_log(f"âœ… {symbol} indicators calculated successfully", "SUCCESS")
                 
         except Exception as e:
-            self.terminal_log(f"❌ Error calculating indicators for {symbol}: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Error calculating indicators for {symbol}: {str(e)}", "ERROR", critical=True)
             indicators['error'] = str(e)
             
         return indicators
@@ -2441,7 +2440,7 @@ class AdvancedMT5TradingMonitorGUI:
         end_minute = int(config.get('ENTRY_END_MINUTE', 59))
         
         # Read UTC offset from config file (set by GUI)
-        # ✅ FIX: Use cached self.broker_utc_offset instead of re-reading file
+        # âœ… FIX: Use cached self.broker_utc_offset instead of re-reading file
         # This ensures we use the correct offset even if file access fails
         utc_offset = getattr(self, 'broker_utc_offset', 1)
         
@@ -2488,13 +2487,13 @@ class AdvancedMT5TradingMonitorGUI:
         state = self.strategy_states[symbol]
         
         # 1. Implement Optional Time Offset
-        # 🛡️ CRITICAL: No defaults - these were validated at startup
+        # ðŸ›¡ï¸ CRITICAL: No defaults - these were validated at startup
         window_start_bar = current_bar
         use_time_offset = config.get('USE_WINDOW_TIME_OFFSET')
         
         # Paranoid check - should never happen if validation is working
         if use_time_offset is None:
-            self.terminal_log(f"❌ CRITICAL BUG: {symbol} USE_WINDOW_TIME_OFFSET is None - this should have been caught at startup!", "ERROR", critical=True)
+            self.terminal_log(f"âŒ CRITICAL BUG: {symbol} USE_WINDOW_TIME_OFFSET is None - this should have been caught at startup!", "ERROR", critical=True)
             return
         
         if isinstance(use_time_offset, str):
@@ -2503,7 +2502,7 @@ class AdvancedMT5TradingMonitorGUI:
         if use_time_offset:
             window_offset_multiplier = config.get('WINDOW_OFFSET_MULTIPLIER')
             if window_offset_multiplier is None:
-                self.terminal_log(f"❌ CRITICAL BUG: {symbol} WINDOW_OFFSET_MULTIPLIER is None!", "ERROR", critical=True)
+                self.terminal_log(f"âŒ CRITICAL BUG: {symbol} WINDOW_OFFSET_MULTIPLIER is None!", "ERROR", critical=True)
                 return
             window_offset_multiplier = float(window_offset_multiplier)
             time_offset = int(state['pullback_candle_count'] * window_offset_multiplier)
@@ -2512,30 +2511,30 @@ class AdvancedMT5TradingMonitorGUI:
         state['window_bar_start'] = window_start_bar
         
         # 2. Set Window Duration
-        # 🛡️ CRITICAL: No defaults - validated at startup
+        # ðŸ›¡ï¸ CRITICAL: No defaults - validated at startup
         if armed_direction == 'LONG':
             window_periods = config.get('LONG_ENTRY_WINDOW_PERIODS')
             if window_periods is None:
-                self.terminal_log(f"❌ CRITICAL BUG: {symbol} LONG_ENTRY_WINDOW_PERIODS is None!", "ERROR", critical=True)
+                self.terminal_log(f"âŒ CRITICAL BUG: {symbol} LONG_ENTRY_WINDOW_PERIODS is None!", "ERROR", critical=True)
                 return
             window_periods = int(window_periods)
         else:
             window_periods = config.get('SHORT_ENTRY_WINDOW_PERIODS')
             if window_periods is None:
-                self.terminal_log(f"❌ CRITICAL BUG: {symbol} SHORT_ENTRY_WINDOW_PERIODS is None!", "ERROR", critical=True)
+                self.terminal_log(f"âŒ CRITICAL BUG: {symbol} SHORT_ENTRY_WINDOW_PERIODS is None!", "ERROR", critical=True)
                 return
             window_periods = int(window_periods)
         
         state['window_expiry_bar'] = window_start_bar + window_periods
         
         # 3. Calculate the Two-Sided Price Channel
-        # 🛡️ CRITICAL: No defaults - validated at startup
+        # ðŸ›¡ï¸ CRITICAL: No defaults - validated at startup
         last_high = state['last_pullback_candle_high']
         last_low = state['last_pullback_candle_low']
         candle_range = last_high - last_low
         price_offset_multiplier = config.get('WINDOW_PRICE_OFFSET_MULTIPLIER')
         if price_offset_multiplier is None:
-            self.terminal_log(f"❌ CRITICAL BUG: {symbol} WINDOW_PRICE_OFFSET_MULTIPLIER is None!", "ERROR", critical=True)
+            self.terminal_log(f"âŒ CRITICAL BUG: {symbol} WINDOW_PRICE_OFFSET_MULTIPLIER is None!", "ERROR", critical=True)
             return
         price_offset_multiplier = float(price_offset_multiplier)
         price_offset = candle_range * price_offset_multiplier
@@ -2549,7 +2548,7 @@ class AdvancedMT5TradingMonitorGUI:
         state['window_active'] = True
         
         digits = state.get('digits', 5)
-        self.terminal_log(f"🪟 {symbol}: Window OPENED ({armed_direction}) | Top: {state['window_top_limit']:.{digits}f} | Bottom: {state['window_bottom_limit']:.{digits}f} | Duration: {window_periods} bars", 
+        self.terminal_log(f"ðŸªŸ {symbol}: Window OPENED ({armed_direction}) | Top: {state['window_top_limit']:.{digits}f} | Bottom: {state['window_bottom_limit']:.{digits}f} | Duration: {window_periods} bars", 
                         "SUCCESS", critical=True)
     
     def _phase4_monitor_window(self, symbol, df, armed_direction, current_bar, current_dt, config):
@@ -2565,40 +2564,40 @@ class AdvancedMT5TradingMonitorGUI:
         state = self.strategy_states[symbol]
         digits = state.get('digits', 5)
         
-        # 🔧 DEBUG: Show entry into phase4 monitoring
-        self.terminal_log(f"🔍 PHASE4: {symbol} | Direction={armed_direction} | Bar={current_bar} | DF_len={len(df)}", 
+        # ðŸ”§ DEBUG: Show entry into phase4 monitoring
+        self.terminal_log(f"ðŸ” PHASE4: {symbol} | Direction={armed_direction} | Bar={current_bar} | DF_len={len(df)}", 
                         "DEBUG", critical=True)
         
         # Check window active (time offset)
         if current_bar < state['window_bar_start']:
-            self.terminal_log(f"⏳ {symbol}: Window PENDING (bar {current_bar} < start {state['window_bar_start']})", 
+            self.terminal_log(f"â³ {symbol}: Window PENDING (bar {current_bar} < start {state['window_bar_start']})", 
                             "DEBUG", critical=True)
             return 'PENDING'
         
         # Check window expiry (matches original Line 1414: if current_bar > self.window_expiry_bar)
         if current_bar > state['window_expiry_bar']:
-            self.terminal_log(f"⏱️ {symbol}: Window EXPIRED (bar {current_bar} > expiry {state['window_expiry_bar']})", 
+            self.terminal_log(f"â±ï¸ {symbol}: Window EXPIRED (bar {current_bar} > expiry {state['window_expiry_bar']})", 
                             "WARNING", critical=True)
             return 'EXPIRED'
         
         # Get current price data
         if len(df) < 1:
-            self.terminal_log(f"❌ {symbol}: No price data in DF!", "ERROR", critical=True)
+            self.terminal_log(f"âŒ {symbol}: No price data in DF!", "ERROR", critical=True)
             return None
         
         current_high = df['high'].iloc[-1]
         current_low = df['low'].iloc[-1]
         current_close = df['close'].iloc[-1]
         
-        # 🔧 DEBUG: Show current price vs boundaries
-        self.terminal_log(f"💹 {symbol}: Price | High={current_high:.{digits}f} Low={current_low:.{digits}f} Close={current_close:.{digits}f}", 
+        # ðŸ”§ DEBUG: Show current price vs boundaries
+        self.terminal_log(f"ðŸ’¹ {symbol}: Price | High={current_high:.{digits}f} Low={current_low:.{digits}f} Close={current_close:.{digits}f}", 
                         "DEBUG", critical=True)
         
         # Monitor breakouts (matches original Lines 1429-1447)
         if armed_direction == 'LONG':
-            # 🔧 DEBUG: Log window boundaries and current price
+            # ðŸ”§ DEBUG: Log window boundaries and current price
             digits = state.get('digits', 5)
-            self.terminal_log(f"🔧 LONG WINDOW CHECK: {symbol} | High={current_high:.{digits}f} Low={current_low:.{digits}f} | " +
+            self.terminal_log(f"ðŸ”§ LONG WINDOW CHECK: {symbol} | High={current_high:.{digits}f} Low={current_low:.{digits}f} | " +
                             f"Top_Limit={state['window_top_limit']:.{digits}f} Bottom_Limit={state['window_bottom_limit']:.{digits}f}", 
                             "DEBUG", critical=True)
             
@@ -2606,7 +2605,7 @@ class AdvancedMT5TradingMonitorGUI:
             if current_high >= state['window_top_limit']:
                 # Final time check before success
                 if not self._is_in_trading_time_range(current_dt, config):
-                    self.terminal_log(f"⏰ {symbol}: Breakout detected but outside trading hours", 
+                    self.terminal_log(f"â° {symbol}: Breakout detected but outside trading hours", 
                                     "WARNING", critical=True)
                     self._reset_entry_state(symbol)
                     return 'EXPIRED'
@@ -2614,13 +2613,13 @@ class AdvancedMT5TradingMonitorGUI:
             
             # FAILURE: Price breaks below bottom limit (original Line 1435: current_low <= self.window_bottom_limit)
             elif current_low <= state['window_bottom_limit']:
-                self.terminal_log(f"❌ {symbol}: LONG FAILURE - Price {current_low:.{digits}f} broke BELOW bottom limit {state['window_bottom_limit']:.{digits}f}", 
+                self.terminal_log(f"âŒ {symbol}: LONG FAILURE - Price {current_low:.{digits}f} broke BELOW bottom limit {state['window_bottom_limit']:.{digits}f}", 
                                 "WARNING", critical=True)
                 return 'FAILURE'
         
         else:  # SHORT
-            # 🔧 DEBUG: Log window boundaries and current price
-            self.terminal_log(f"🔧 SHORT WINDOW CHECK: {symbol} | High={current_high:.{digits}f} Low={current_low:.{digits}f} | " +
+            # ðŸ”§ DEBUG: Log window boundaries and current price
+            self.terminal_log(f"ðŸ”§ SHORT WINDOW CHECK: {symbol} | High={current_high:.{digits}f} Low={current_low:.{digits}f} | " +
                             f"Top_Limit={state['window_top_limit']:.{digits}f} Bottom_Limit={state['window_bottom_limit']:.{digits}f}", 
                             "DEBUG", critical=True)
             
@@ -2628,7 +2627,7 @@ class AdvancedMT5TradingMonitorGUI:
             if current_low <= state['window_bottom_limit']:
                 # Final time check before success
                 if not self._is_in_trading_time_range(current_dt, config):
-                    self.terminal_log(f"⏰ {symbol}: Breakout detected but outside trading hours", 
+                    self.terminal_log(f"â° {symbol}: Breakout detected but outside trading hours", 
                                     "WARNING", critical=True)
                     self._reset_entry_state(symbol)
                     return 'EXPIRED'
@@ -2636,24 +2635,24 @@ class AdvancedMT5TradingMonitorGUI:
             
             # FAILURE: Price breaks above top limit (original Line 1451: current_high >= self.window_top_limit)
             elif current_high >= state['window_top_limit']:
-                self.terminal_log(f"❌ {symbol}: SHORT FAILURE - Price {current_high:.{digits}f} broke ABOVE top limit {state['window_top_limit']:.{digits}f}", 
+                self.terminal_log(f"âŒ {symbol}: SHORT FAILURE - Price {current_high:.{digits}f} broke ABOVE top limit {state['window_top_limit']:.{digits}f}", 
                                 "WARNING", critical=True)
                 return 'FAILURE'
         
-        # 🔧 DEBUG: No breakout detected, still monitoring
-        self.terminal_log(f"⏳ {symbol}: Window monitoring - No breakout yet (within boundaries)", 
+        # ðŸ”§ DEBUG: No breakout detected, still monitoring
+        self.terminal_log(f"â³ {symbol}: Window monitoring - No breakout yet (within boundaries)", 
                         "DEBUG", critical=True)
         return None  # Still monitoring
         
     def determine_strategy_phase(self, symbol, df, indicators):
         """4-PHASE STATE MACHINE - Exact copy of original strategy logic
         
-        States: SCANNING → ARMED_LONG/SHORT → WINDOW_OPEN → Entry/Reset
+        States: SCANNING â†’ ARMED_LONG/SHORT â†’ WINDOW_OPEN â†’ Entry/Reset
         Matches: sunrise_ogle_*.py state machine exactly
         """
         # Type guard for pandas (required for operation)
         if pd is None or mt5 is None:
-            self.terminal_log(f"❌ {symbol}: Dependencies not available", "ERROR", critical=True)
+            self.terminal_log(f"âŒ {symbol}: Dependencies not available", "ERROR", critical=True)
             return 'ERROR'
         
         current_state = self.strategy_states[symbol]
@@ -2664,7 +2663,7 @@ class AdvancedMT5TradingMonitorGUI:
         # EMERGENCY SAFEGUARD: Force disable SHORT arming (all assets LONG only)
         # ===================================================================
         if entry_state == 'ARMED_SHORT':
-            self.terminal_log(f"🚨 {symbol}: EMERGENCY RESET - ARMED_SHORT detected but SHORTS DISABLED globally!", 
+            self.terminal_log(f"ðŸš¨ {symbol}: EMERGENCY RESET - ARMED_SHORT detected but SHORTS DISABLED globally!", 
                             "ERROR", critical=True)
             self._reset_entry_state(symbol)
             entry_state = 'SCANNING'
@@ -2673,20 +2672,20 @@ class AdvancedMT5TradingMonitorGUI:
             if 'crossover_data' in current_state:
                 current_state['crossover_data']['bearish_crossover'] = False
         
-        # ✅ CRITICAL FIX: Check for open positions BEFORE any processing
+        # âœ… CRITICAL FIX: Check for open positions BEFORE any processing
         # If position exists and we're in IN_TRADE state, check if it's still open
         # If closed, reset state to allow new entries
         if entry_state == 'IN_TRADE':
             positions = mt5.positions_get(symbol=symbol)  # type: ignore
             if positions is None or len(positions) == 0:
                 # Position closed (by SL/TP) - Reset state to allow new entries
-                self.terminal_log(f"🔓 {symbol}: Position closed - Unlocking for new signals", 
+                self.terminal_log(f"ðŸ”“ {symbol}: Position closed - Unlocking for new signals", 
                                 "INFO", critical=True)
                 self._reset_entry_state(symbol)
                 entry_state = 'SCANNING'
             else:
                 # Position still open - Skip all processing
-                self.terminal_log(f"🔒 {symbol}: Position still open (Ticket #{positions[0].ticket}) - Skipping signal detection", 
+                self.terminal_log(f"ðŸ”’ {symbol}: Position still open (Ticket #{positions[0].ticket}) - Skipping signal detection", 
                                 "DEBUG", critical=False)
                 return 'IN_TRADE'
         
@@ -2717,22 +2716,22 @@ class AdvancedMT5TradingMonitorGUI:
         # ===================================================================
         # TIME FILTER - ONLY FOR TRADE EXECUTION
         # ===================================================================
-        # ⚠️ CRITICAL FIX: Time filter is checked ONLY at breakout execution
+        # âš ï¸ CRITICAL FIX: Time filter is checked ONLY at breakout execution
         # inside _phase4_monitor_window(), NOT here. Window monitoring and 
         # state progression must continue 24/7. Only the final trade execution
         # respects trading hours (checked at line 1293 and 1304).
         
         try:
-            # ✅ DIAGNOSTIC: Log state machine processing
+            # âœ… DIAGNOSTIC: Log state machine processing
             if entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
                 pullback_count = current_state.get('pullback_candle_count', 0)
-                self.terminal_log(f"🔧 STATE: {symbol} processing | state={entry_state} | pullback_count={pullback_count} | df_len={len(df)}", 
+                self.terminal_log(f"ðŸ”§ STATE: {symbol} processing | state={entry_state} | pullback_count={pullback_count} | df_len={len(df)}", 
                                 "DEBUG", critical=True)
             elif entry_state == 'WINDOW_OPEN':
-                # ⚠️ CRITICAL: Add diagnostic logging for WINDOW_OPEN phase
+                # âš ï¸ CRITICAL: Add diagnostic logging for WINDOW_OPEN phase
                 window_active = current_state.get('window_active', False)
                 armed_direction = current_state.get('armed_direction', 'Unknown')
-                self.terminal_log(f"🔧 WINDOW: {symbol} monitoring | state={entry_state} | direction={armed_direction} | active={window_active} | df_len={len(df)}", 
+                self.terminal_log(f"ðŸ”§ WINDOW: {symbol} monitoring | state={entry_state} | direction={armed_direction} | active={window_active} | df_len={len(df)}", 
                                 "DEBUG", critical=True)
             
             # Get crossover data
@@ -2751,13 +2750,13 @@ class AdvancedMT5TradingMonitorGUI:
                 # ARMED_LONG: Reset if bearish crossover detected (even if shorts disabled)
                 if entry_state == 'ARMED_LONG' and bearish_cross:
                     opposing_signal = True
-                    self.terminal_log(f"⚠️ {symbol}: GLOBAL INVALIDATION - Bearish crossover detected in ARMED_LONG", 
+                    self.terminal_log(f"âš ï¸ {symbol}: GLOBAL INVALIDATION - Bearish crossover detected in ARMED_LONG", 
                                     "WARNING", critical=True)
                 
                 # ARMED_SHORT: Reset if bullish crossover detected
                 elif entry_state == 'ARMED_SHORT' and bullish_cross:
                     opposing_signal = True
-                    self.terminal_log(f"⚠️ {symbol}: GLOBAL INVALIDATION - Bullish crossover detected in ARMED_SHORT", 
+                    self.terminal_log(f"âš ï¸ {symbol}: GLOBAL INVALIDATION - Bullish crossover detected in ARMED_SHORT", 
                                     "WARNING", critical=True)
                 
                 if opposing_signal:
@@ -2769,7 +2768,7 @@ class AdvancedMT5TradingMonitorGUI:
             # ===================================================================
             
             # ---------------------------------------------------------------
-            # PHASE 1: SCANNING → ARMED (Signal Detection)
+            # PHASE 1: SCANNING â†’ ARMED (Signal Detection)
             # ---------------------------------------------------------------
             if entry_state == 'SCANNING':
                 signal_direction = None
@@ -2784,7 +2783,7 @@ class AdvancedMT5TradingMonitorGUI:
                 
                 # Transition to ARMED if signal detected
                 if signal_direction:
-                    # ✅ CRITICAL: Check if pullback system is enabled for this direction
+                    # âœ… CRITICAL: Check if pullback system is enabled for this direction
                     use_pullback = False
                     if signal_direction == 'LONG':
                         use_pullback_str = str(config.get('LONG_USE_PULLBACK_ENTRY', 'True')).strip()
@@ -2797,7 +2796,7 @@ class AdvancedMT5TradingMonitorGUI:
                     current_price = df['close'].iloc[-1] if len(df) > 0 else 0
                     digits = current_state.get('digits', 5)
                     
-                    # ✅ CRITICAL FIX: Clear crossover flags after consuming them FIRST
+                    # âœ… CRITICAL FIX: Clear crossover flags after consuming them FIRST
                     # This prevents re-arming on the same crossover signal repeatedly
                     current_state['crossover_data'] = {
                         'bullish_crossover': False,
@@ -2806,7 +2805,7 @@ class AdvancedMT5TradingMonitorGUI:
                     }
                     
                     if use_pullback:
-                        # 🔄 PULLBACK MODE: Use 3-phase system (ARMED → WINDOW_OPEN → ENTRY)
+                        # ðŸ”„ PULLBACK MODE: Use 3-phase system (ARMED â†’ WINDOW_OPEN â†’ ENTRY)
                         current_state['entry_state'] = f"ARMED_{signal_direction}"
                         current_state['phase'] = 'WAITING_PULLBACK'
                         current_state['armed_direction'] = signal_direction
@@ -2836,10 +2835,10 @@ class AdvancedMT5TradingMonitorGUI:
                                 'is_bearish': df['close'].iloc[idx] < df['open'].iloc[idx]
                             }
                             
-                            # ✅ CRITICAL FIX: Mark CURRENT last closed candle as already processed
+                            # âœ… CRITICAL FIX: Mark CURRENT last closed candle as already processed
                             # The crossover is detected on the current closed candle (index -1)
                             # We must mark it to prevent checking the arming candle itself for pullbacks
-                            # ✅ FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
+                            # âœ… FIX: Use 'time' column, NOT df.index (which is RangeIndex 0-499)
                             current_last_candle_time = df['time'].iloc[-1]
                             current_state['last_pullback_check_candle'] = current_last_candle_time
                         
@@ -2851,32 +2850,32 @@ class AdvancedMT5TradingMonitorGUI:
                             max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
                             pullback_type = "BULLISH (Green)"
                         
-                        self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - State: SCANNING → ARMED_{signal_direction} | Price: {current_price:.{digits}f}", 
+                        self.terminal_log(f"ðŸŽ¯ {symbol}: {signal_direction} CROSSOVER - State: SCANNING â†’ ARMED_{signal_direction} | Price: {current_price:.{digits}f}", 
                                         "SUCCESS", critical=True)
-                        self.terminal_log(f"📋 {symbol}: PULLBACK MODE - Monitoring for {max_candles} {pullback_type} pullback candles...", 
+                        self.terminal_log(f"ðŸ“‹ {symbol}: PULLBACK MODE - Monitoring for {max_candles} {pullback_type} pullback candles...", 
                                         "INFO", critical=True)
                         entry_state = f"ARMED_{signal_direction}"
                         
-                        # 🛡️ INITIALIZE CANDLE SEQUENCE TRACKER - Ensures we never miss candles
+                        # ðŸ›¡ï¸ INITIALIZE CANDLE SEQUENCE TRACKER - Ensures we never miss candles
                         current_state['candle_sequence_counter'] = 0
                         current_state['armed_at_candle_time'] = df['time'].iloc[-1]
-                        self.terminal_log(f"🔒 {symbol}: Candle sequence tracker initialized at {current_state['armed_at_candle_time']}", 
+                        self.terminal_log(f"ðŸ”’ {symbol}: Candle sequence tracker initialized at {current_state['armed_at_candle_time']}", 
                                         "INFO", critical=True)
                     else:
-                        # ⚡ STANDARD MODE: Enter immediately on crossover (no pullback wait)
-                        self.terminal_log(f"🎯 {symbol}: {signal_direction} CROSSOVER - STANDARD MODE (No pullback) | Price: {current_price:.{digits}f}", 
+                        # âš¡ STANDARD MODE: Enter immediately on crossover (no pullback wait)
+                        self.terminal_log(f"ðŸŽ¯ {symbol}: {signal_direction} CROSSOVER - STANDARD MODE (No pullback) | Price: {current_price:.{digits}f}", 
                                         "SUCCESS", critical=True)
-                        self.terminal_log(f"⚡ {symbol}: Entering immediately (pullback system disabled)", 
+                        self.terminal_log(f"âš¡ {symbol}: Entering immediately (pullback system disabled)", 
                                         "INFO", critical=True)
                         
                         # Execute entry directly
                         entry_success = self._execute_entry(symbol, signal_direction, df, current_dt, config)
                         
                         if entry_success:
-                            self.terminal_log(f"✅ {symbol}: STANDARD ENTRY executed at {current_price:.{digits}f}", 
+                            self.terminal_log(f"âœ… {symbol}: STANDARD ENTRY executed at {current_price:.{digits}f}", 
                                             "SUCCESS", critical=True)
                         else:
-                            self.terminal_log(f"❌ {symbol}: STANDARD ENTRY failed - Reset to SCANNING", 
+                            self.terminal_log(f"âŒ {symbol}: STANDARD ENTRY failed - Reset to SCANNING", 
                                             "ERROR", critical=True)
                         
                         # Reset state to SCANNING after entry attempt
@@ -2884,48 +2883,48 @@ class AdvancedMT5TradingMonitorGUI:
                         entry_state = 'SCANNING'
             
             # ---------------------------------------------------------------
-            # PHASE 2: ARMED → WINDOW_OPEN (Pullback Confirmation)
+            # PHASE 2: ARMED â†’ WINDOW_OPEN (Pullback Confirmation)
             # ---------------------------------------------------------------
             elif entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
                 armed_direction = current_state['armed_direction']
                 
-                # ✅ DIAGNOSTIC: Log entry into ARMED pullback checking
-                self.terminal_log(f"🔧 DEBUG: {symbol} entered ARMED pullback check | armed_direction={armed_direction} | df_len={len(df)}", 
+                # âœ… DIAGNOSTIC: Log entry into ARMED pullback checking
+                self.terminal_log(f"ðŸ”§ DEBUG: {symbol} entered ARMED pullback check | armed_direction={armed_direction} | df_len={len(df)}", 
                                 "DEBUG", critical=True)
                 
                 # Safety check: If SHORT armed but disabled, reset
                 if armed_direction == 'SHORT' and not short_enabled:
-                    self.terminal_log(f"⚠️ {symbol}: SHORT armed but disabled - Reset", 
+                    self.terminal_log(f"âš ï¸ {symbol}: SHORT armed but disabled - Reset", 
                                     "WARNING", critical=True)
                     self._reset_entry_state(symbol)
                     entry_state = 'SCANNING'
                 
-                # ⚠️ CRITICAL: df already has forming candle removed at line 747!
+                # âš ï¸ CRITICAL: df already has forming candle removed at line 747!
                 # So df.iloc[-1] IS the last CLOSED candle, not forming
                 # Don't remove another candle or we'll check old data
                 elif len(df) >= 1:  # Need at least 1 closed candle
-                    # 🛡️ STEP 1: DATAFRAME INTEGRITY CHECK
+                    # ðŸ›¡ï¸ STEP 1: DATAFRAME INTEGRITY CHECK
                     # Verify we have continuous M5 data without gaps
                     if len(df) >= 2:
                         time_diffs = df['time'].diff().dt.total_seconds() / 60  # Minutes between candles
                         gaps = time_diffs[time_diffs > 5]  # Find gaps > 5 minutes
                         if len(gaps) > 0:
-                            self.terminal_log(f"⚠️ {symbol}: DataFrame has {len(gaps)} gap(s) in historical data!", "WARNING", critical=True)
+                            self.terminal_log(f"âš ï¸ {symbol}: DataFrame has {len(gaps)} gap(s) in historical data!", "WARNING", critical=True)
                             for gap_idx in gaps.index:
                                 gap_time = df['time'].iloc[gap_idx]
                                 gap_size = time_diffs.iloc[gap_idx]
-                                self.terminal_log(f"  📊 Gap at {gap_time}: {gap_size:.0f} min", "WARNING", critical=True)
+                                self.terminal_log(f"  ðŸ“Š Gap at {gap_time}: {gap_size:.0f} min", "WARNING", critical=True)
                     
                     # Get the LAST CLOSED candle TIMESTAMP (df already excludes forming candle)
-                    # ✅ FIX: Use 'time' column, NOT df.index
+                    # âœ… FIX: Use 'time' column, NOT df.index
                     last_closed_candle_time = df['time'].iloc[-1] if len(df) > 0 else None
                     
-                    # ✅ DIAGNOSTIC: Log the candle being checked
+                    # âœ… DIAGNOSTIC: Log the candle being checked
                     last_checked = current_state.get('last_pullback_check_candle', 'NONE')
-                    self.terminal_log(f"🔧 DEBUG: {symbol} pullback candle check | last_closed={last_closed_candle_time} | last_checked={last_checked} | Same? {last_closed_candle_time == last_checked}", 
+                    self.terminal_log(f"ðŸ”§ DEBUG: {symbol} pullback candle check | last_closed={last_closed_candle_time} | last_checked={last_checked} | Same? {last_closed_candle_time == last_checked}", 
                                     "DEBUG", critical=True)
                     
-                    # 🛡️ BULLETPROOF CANDLE DETECTION - NEVER MISS A CANDLE
+                    # ðŸ›¡ï¸ BULLETPROOF CANDLE DETECTION - NEVER MISS A CANDLE
                     # Strategy: ALWAYS check for gaps, not just when time_diff > 5
                     # Use DataFrame filtering to get ALL unprocessed candles
                     
@@ -2934,10 +2933,10 @@ class AdvancedMT5TradingMonitorGUI:
                     if last_checked == 'NONE' or not isinstance(last_checked, pd.Timestamp):
                         # First time checking - start from latest closed candle
                         candles_to_check = df.tail(1).copy()
-                        self.terminal_log(f"🔍 {symbol}: First pullback check - processing latest candle", "INFO", critical=True)
+                        self.terminal_log(f"ðŸ” {symbol}: First pullback check - processing latest candle", "INFO", critical=True)
                     elif not isinstance(last_closed_candle_time, pd.Timestamp):
                         # No valid timestamp on latest candle - data issue
-                        self.terminal_log(f"⚠️ {symbol}: Invalid timestamp on latest candle - skipping check", "WARNING", critical=True)
+                        self.terminal_log(f"âš ï¸ {symbol}: Invalid timestamp on latest candle - skipping check", "WARNING", critical=True)
                         candles_to_check = pd.DataFrame()  # Empty, will skip processing
                     else:
                         # ROBUST: Always filter for ALL candles AFTER last_checked
@@ -2951,31 +2950,31 @@ class AdvancedMT5TradingMonitorGUI:
                         elif len(unprocessed_candles) == 1:
                             # Normal case - exactly 1 new candle
                             candles_to_check = unprocessed_candles
-                            self.terminal_log(f"✅ {symbol}: 1 new candle to process (consecutive check)", "INFO", critical=True)
+                            self.terminal_log(f"âœ… {symbol}: 1 new candle to process (consecutive check)", "INFO", critical=True)
                         else:
                             # GAP DETECTED - Multiple unprocessed candles
                             time_diff = (last_closed_candle_time - last_checked).total_seconds() / 60
                             num_skipped = len(unprocessed_candles) - 1  # Subtract the expected next candle
                             
-                            self.terminal_log(f"⚠️ CRITICAL: {symbol} DETECTED GAP! Skipped {num_skipped} candle(s)", "WARNING", critical=True)
-                            self.terminal_log(f"📊 {symbol}: Last checked: {last_checked} | Latest: {last_closed_candle_time} | Time gap: {time_diff:.0f} min", "WARNING", critical=True)
-                            self.terminal_log(f"� {symbol}: Processing ALL {len(unprocessed_candles)} unprocessed candles to catch up...", "INFO", critical=True)
+                            self.terminal_log(f"âš ï¸ CRITICAL: {symbol} DETECTED GAP! Skipped {num_skipped} candle(s)", "WARNING", critical=True)
+                            self.terminal_log(f"ðŸ“Š {symbol}: Last checked: {last_checked} | Latest: {last_closed_candle_time} | Time gap: {time_diff:.0f} min", "WARNING", critical=True)
+                            self.terminal_log(f"ï¿½ {symbol}: Processing ALL {len(unprocessed_candles)} unprocessed candles to catch up...", "INFO", critical=True)
                             
                             candles_to_check = unprocessed_candles
                             
-                            # 🛡️ SAFETY: Validate sequence integrity
+                            # ðŸ›¡ï¸ SAFETY: Validate sequence integrity
                             for i in range(len(unprocessed_candles)):
                                 candle_time = unprocessed_candles.iloc[i]['time']
-                                self.terminal_log(f"  📅 Candle #{i+1}: {candle_time}", "INFO", critical=True)
+                                self.terminal_log(f"  ðŸ“… Candle #{i+1}: {candle_time}", "INFO", critical=True)
                         
-                        # 🔒 FINAL VALIDATION: Ensure we're checking consecutive candles
+                        # ðŸ”’ FINAL VALIDATION: Ensure we're checking consecutive candles
                         if len(candles_to_check) > 0:
                             first_candle_time = candles_to_check.iloc[0]['time']
                             expected_next = last_checked + pd.Timedelta(minutes=5)
                             
                             if first_candle_time != expected_next:
                                 gap_minutes = (first_candle_time - last_checked).total_seconds() / 60
-                                self.terminal_log(f"⚠️ {symbol}: Non-consecutive candles detected! Expected {expected_next}, got {first_candle_time} (gap: {gap_minutes:.0f} min)", 
+                                self.terminal_log(f"âš ï¸ {symbol}: Non-consecutive candles detected! Expected {expected_next}, got {first_candle_time} (gap: {gap_minutes:.0f} min)", 
                                                 "WARNING", critical=True)
                     
                     # Check if we've already processed this closed candle
@@ -3001,7 +3000,7 @@ class AdvancedMT5TradingMonitorGUI:
                             max_candles = int(config.get('SHORT_PULLBACK_MAX_CANDLES', 2))
                             pullback_type = "BULLISH (Green)"
                         
-                        # 🔄 PROCESS ALL CANDLES IN SEQUENCE (handles gaps)
+                        # ðŸ”„ PROCESS ALL CANDLES IN SEQUENCE (handles gaps)
                         for idx, candle_row in candles_to_check.iterrows():
                             candle_time = candle_row['time']
                             current_open = candle_row['open']
@@ -3010,14 +3009,14 @@ class AdvancedMT5TradingMonitorGUI:
                             current_close = candle_row['close']
                             current_count = current_state.get('pullback_candle_count', 0)
                             
-                            # 🛡️ SEQUENCE COUNTER: Track total candles checked since ARMED
+                            # ðŸ›¡ï¸ SEQUENCE COUNTER: Track total candles checked since ARMED
                             seq_counter = current_state.get('candle_sequence_counter', 0)
                             seq_counter += 1
                             current_state['candle_sequence_counter'] = seq_counter
                             
-                            # ✅ LOG EVERY CANDLE CHECKED IN ARMED STATE
+                            # âœ… LOG EVERY CANDLE CHECKED IN ARMED STATE
                             candle_time_str = candle_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(candle_time, 'strftime') else str(candle_time)
-                            self.terminal_log(f"🔍 CHECKING CANDLE #{seq_counter}: {symbol} {armed_direction} | Time: {candle_time_str} | O:{current_open:.5f} H:{current_high:.5f} L:{current_low:.5f} C:{current_close:.5f} | Pullback: {current_count}/{max_candles}", 
+                            self.terminal_log(f"ðŸ” CHECKING CANDLE #{seq_counter}: {symbol} {armed_direction} | Time: {candle_time_str} | O:{current_open:.5f} H:{current_high:.5f} L:{current_low:.5f} C:{current_close:.5f} | Pullback: {current_count}/{max_candles}", 
                                             "INFO", critical=True)
                             
                             is_pullback_candle = False
@@ -3055,51 +3054,51 @@ class AdvancedMT5TradingMonitorGUI:
                                     current_state['phase'] = 'WAITING_BREAKOUT'
                                     entry_state = 'WINDOW_OPEN'
                                     
-                                    self.terminal_log(f"✅ {symbol}: Pullback CONFIRMED ({current_state['pullback_candle_count']}/{max_candles}) - Window OPENING", 
+                                    self.terminal_log(f"âœ… {symbol}: Pullback CONFIRMED ({current_state['pullback_candle_count']}/{max_candles}) - Window OPENING", 
                                                     "SUCCESS", critical=True)
                                     break  # Exit loop - window is open, stop checking more candles
                                 else:
                                     # Still waiting for more pullback candles - SHOW THIS!
                                     candle_type = "Bearish" if armed_direction == 'LONG' else "Bullish"
-                                    self.terminal_log(f"📉 {symbol}: {candle_type} pullback #{current_state['pullback_candle_count']}/{max_candles} detected (need {max_candles - current_state['pullback_candle_count']} more)", 
+                                    self.terminal_log(f"ðŸ“‰ {symbol}: {candle_type} pullback #{current_state['pullback_candle_count']}/{max_candles} detected (need {max_candles - current_state['pullback_candle_count']} more)", 
                                                     "INFO", critical=True)
                             else:
-                                # ❌ INVALID PULLBACK (Wrong color) -> RESET (Matches Original)
-                                self.terminal_log(f"♻️ {symbol}: Pullback failed (wrong candle color) - Resetting to SCANNING", "NORMAL")
+                                # âŒ INVALID PULLBACK (Wrong color) -> RESET (Matches Original)
+                                self.terminal_log(f"â™»ï¸ {symbol}: Pullback failed (wrong candle color) - Resetting to SCANNING", "NORMAL")
                                 self._reset_entry_state(symbol)
                                 return 'SCANNING'
                         
-                        # 🎯 Summary after processing all candles
+                        # ðŸŽ¯ Summary after processing all candles
                         if len(candles_to_check) > 1:
                             final_count = current_state.get('pullback_candle_count', 0)
-                            self.terminal_log(f"✅ {symbol}: Processed {len(candles_to_check)} candles | Final pullback count: {final_count}/{max_candles}", 
+                            self.terminal_log(f"âœ… {symbol}: Processed {len(candles_to_check)} candles | Final pullback count: {final_count}/{max_candles}", 
                                             "INFO", critical=True)
                         
-                        # 🛡️ POST-PROCESSING VALIDATION: Verify sequence integrity
+                        # ðŸ›¡ï¸ POST-PROCESSING VALIDATION: Verify sequence integrity
                         if len(candles_to_check) > 0:
                             last_processed = current_state.get('last_pullback_check_candle', None)
                             if isinstance(last_processed, pd.Timestamp) and isinstance(last_closed_candle_time, pd.Timestamp):
                                 if last_processed == last_closed_candle_time:
-                                    self.terminal_log(f"✅ {symbol}: Sequence validation PASSED - Latest candle processed", "INFO", critical=True)
+                                    self.terminal_log(f"âœ… {symbol}: Sequence validation PASSED - Latest candle processed", "INFO", critical=True)
                                 else:
-                                    self.terminal_log(f"⚠️ {symbol}: Sequence validation WARNING - Last processed: {last_processed}, Expected: {last_closed_candle_time}", 
+                                    self.terminal_log(f"âš ï¸ {symbol}: Sequence validation WARNING - Last processed: {last_processed}, Expected: {last_closed_candle_time}", 
                                                     "WARNING", critical=True)
                                     # Force sync to latest
                                     current_state['last_pullback_check_candle'] = last_closed_candle_time
-                                    self.terminal_log(f"🔧 {symbol}: Force synced last_pullback_check_candle to {last_closed_candle_time}", "INFO", critical=True)            # ---------------------------------------------------------------
+                                    self.terminal_log(f"ðŸ”§ {symbol}: Force synced last_pullback_check_candle to {last_closed_candle_time}", "INFO", critical=True)            # ---------------------------------------------------------------
             # PHASE 3: WINDOW_OPEN (Monitor for Breakout)
             # ---------------------------------------------------------------
             elif entry_state == 'WINDOW_OPEN':
                 armed_direction = current_state['armed_direction']
                 
-                # 🔧 DEBUG: Entry into window monitoring
-                self.terminal_log(f"🪟 {symbol}: WINDOW_OPEN phase | Direction={armed_direction} | Bar={current_bar} | DF_len={len(df)}", 
+                # ðŸ”§ DEBUG: Entry into window monitoring
+                self.terminal_log(f"ðŸªŸ {symbol}: WINDOW_OPEN phase | Direction={armed_direction} | Bar={current_bar} | DF_len={len(df)}", 
                                 "DEBUG", critical=True)
                 
                 breakout_status = self._phase4_monitor_window(symbol, df, armed_direction, current_bar, current_dt, config)
                 
-                # 🔧 DEBUG: Breakout status result
-                self.terminal_log(f"📊 {symbol}: Window check result = {breakout_status}", 
+                # ðŸ”§ DEBUG: Breakout status result
+                self.terminal_log(f"ðŸ“Š {symbol}: Window check result = {breakout_status}", 
                                 "DEBUG", critical=True)
                 
                 if breakout_status == 'SUCCESS':
@@ -3107,7 +3106,7 @@ class AdvancedMT5TradingMonitorGUI:
                     trade_executed = False  # Initialize variable
                     
                     if len(df) < 1:
-                        self.terminal_log(f"❌ {symbol}: BREAKOUT detected but no price data available!", 
+                        self.terminal_log(f"âŒ {symbol}: BREAKOUT detected but no price data available!", 
                                         "ERROR", critical=True)
                         self._reset_entry_state(symbol)
                         entry_state = 'SCANNING'
@@ -3115,7 +3114,7 @@ class AdvancedMT5TradingMonitorGUI:
                         current_close = float(df['close'].iloc[-1])
                         digits = current_state.get('digits', 5)
                         
-                        self.terminal_log(f"✅ {symbol}: BREAKOUT detected - Validating entry conditions...", 
+                        self.terminal_log(f"âœ… {symbol}: BREAKOUT detected - Validating entry conditions...", 
                                         "INFO", critical=True)
                         
                         # 1. RE-CALCULATE INDICATORS for fresh validation (Angle, Price vs EMA, etc.)
@@ -3141,26 +3140,26 @@ class AdvancedMT5TradingMonitorGUI:
                         fresh_slow = fresh_indicators.get('ema_slow', 0)
                         fresh_confirm = fresh_indicators.get('ema_confirm', 0)
                         
-                        # ✅ 1. EMA Ordering - Basic trend structure must hold (matches original)
+                        # âœ… 1. EMA Ordering - Basic trend structure must hold (matches original)
                         if all_filters_passed and not self._validate_ema_ordering(symbol, fresh_confirm, fresh_fast, fresh_medium, fresh_slow, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Ordering (Trend Broken)", "WARNING", critical=True)
+                            self.terminal_log(f"âŒ {symbol}: Entry blocked by EMA Ordering (Trend Broken)", "WARNING", critical=True)
                             all_filters_passed = False
                         
-                        # ✅ 2. Price Filter (Trend Alignment) - matches original
+                        # âœ… 2. Price Filter (Trend Alignment) - matches original
                         if all_filters_passed and not self._validate_price_filter(symbol, df_validation, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by Price Filter (Trend Reversal)", "WARNING", critical=True)
+                            self.terminal_log(f"âŒ {symbol}: Entry blocked by Price Filter (Trend Reversal)", "WARNING", critical=True)
                             all_filters_passed = False
                         
-                        # ✅ 3. EMA Position Filter (EMAs below/above price) - matches original
+                        # âœ… 3. EMA Position Filter (EMAs below/above price) - matches original
                         if all_filters_passed:
                             ema_position_passed = self._validate_ema_position_filter(symbol, df_validation, fresh_fast, fresh_medium, fresh_slow, armed_direction)
                             if not ema_position_passed:
-                                self.terminal_log(f"❌ {symbol}: Entry blocked by EMA Position Filter", "WARNING", critical=True)
+                                self.terminal_log(f"âŒ {symbol}: Entry blocked by EMA Position Filter", "WARNING", critical=True)
                                 all_filters_passed = False
                         
-                        # ✅ 4. Angle Filter - matches original _validate_all_entry_filters
+                        # âœ… 4. Angle Filter - matches original _validate_all_entry_filters
                         if all_filters_passed and not self._validate_angle_filter(symbol, df_validation, armed_direction):
-                            self.terminal_log(f"❌ {symbol}: Entry blocked by Angle Filter at breakout", "WARNING", critical=True)
+                            self.terminal_log(f"âŒ {symbol}: Entry blocked by Angle Filter at breakout", "WARNING", critical=True)
                             all_filters_passed = False
                             
                         # 3. VALIDATE TRIGGER CANDLE (Original Signal)
@@ -3177,24 +3176,24 @@ class AdvancedMT5TradingMonitorGUI:
                                     is_valid_direction = trigger_candle['is_bearish']
                                     
                                 if not is_valid_direction:
-                                    self.terminal_log(f"❌ {symbol}: Entry blocked - Original trigger candle direction invalid", "WARNING", critical=True)
+                                    self.terminal_log(f"âŒ {symbol}: Entry blocked - Original trigger candle direction invalid", "WARNING", critical=True)
                                     all_filters_passed = False
                         
                         if not all_filters_passed:
-                            self.terminal_log(f"⛔ {symbol}: ENTRY ABORTED - Filters failed at breakout time", "WARNING", critical=True)
+                            self.terminal_log(f"â›” {symbol}: ENTRY ABORTED - Filters failed at breakout time", "WARNING", critical=True)
                             self._reset_entry_state(symbol)
                             entry_state = 'SCANNING'
                             return entry_state
 
-                        self.terminal_log(f"✅ {symbol}: All entry filters PASSED. Price: {current_close:.{digits}f}", 
+                        self.terminal_log(f"âœ… {symbol}: All entry filters PASSED. Price: {current_close:.{digits}f}", 
                                         "SUCCESS", critical=True)
                         
-                        # ⏰ CRITICAL: Validate time filter before entry (matches original strategy Line 1381)
+                        # â° CRITICAL: Validate time filter before entry (matches original strategy Line 1381)
                         current_dt = df['time'].iloc[-1] if len(df) > 0 else datetime.now()
                         time_filter_passed = self._validate_time_filter(symbol, current_dt, armed_direction)
                         
                         if not time_filter_passed:
-                            self.terminal_log(f"🚫 {symbol}: ENTRY BLOCKED - Breakout detected outside trading hours", 
+                            self.terminal_log(f"ðŸš« {symbol}: ENTRY BLOCKED - Breakout detected outside trading hours", 
                                             "WARNING", critical=True)
                             self._reset_entry_state(symbol)
                             entry_state = 'SCANNING'
@@ -3205,22 +3204,22 @@ class AdvancedMT5TradingMonitorGUI:
                             trade_executed = self.execute_trade(symbol, armed_direction, entry_price, config)
                     
                     if trade_executed:
-                        self.terminal_log(f"🎯 {symbol}: Trade executed successfully!", "SUCCESS", critical=True)
-                        # ⚠️ CRITICAL FIX: DO NOT reset state immediately after trade execution
+                        self.terminal_log(f"ðŸŽ¯ {symbol}: Trade executed successfully!", "SUCCESS", critical=True)
+                        # âš ï¸ CRITICAL FIX: DO NOT reset state immediately after trade execution
                         # Set to IN_TRADE state to prevent duplicate entries while position is open
                         current_state['entry_state'] = 'IN_TRADE'
                         current_state['phase'] = 'TRADE_ACTIVE'
                         entry_state = 'IN_TRADE'
-                        self.terminal_log(f"🔒 {symbol}: State locked - Will not accept new signals until position closes", 
+                        self.terminal_log(f"ðŸ”’ {symbol}: State locked - Will not accept new signals until position closes", 
                                         "INFO", critical=True)
                     else:
-                        self.terminal_log(f"⚠️ {symbol}: Trade execution failed!", "WARNING", critical=True)
+                        self.terminal_log(f"âš ï¸ {symbol}: Trade execution failed!", "WARNING", critical=True)
                         # Only reset if trade failed
                         self._reset_entry_state(symbol)
                         entry_state = 'SCANNING'
                     
                 elif breakout_status == 'EXPIRED':
-                    self.terminal_log(f"⏱️ {symbol}: Window EXPIRED - Returning to pullback search", 
+                    self.terminal_log(f"â±ï¸ {symbol}: Window EXPIRED - Returning to pullback search", 
                                     "WARNING", critical=True)
                     # Return to ARMED state to search for more pullback (matches original Lines 1191-1198)
                     current_state['entry_state'] = f"ARMED_{armed_direction}"
@@ -3235,7 +3234,7 @@ class AdvancedMT5TradingMonitorGUI:
                     entry_state = f"ARMED_{armed_direction}"
                     
                 elif breakout_status == 'FAILURE':
-                    self.terminal_log(f"❌ {symbol}: Failure boundary broken - Returning to pullback search", 
+                    self.terminal_log(f"âŒ {symbol}: Failure boundary broken - Returning to pullback search", 
                                     "WARNING", critical=True)
                     # Return to ARMED state (matches original Lines 1216-1221)
                     current_state['entry_state'] = f"ARMED_{armed_direction}"
@@ -3253,7 +3252,7 @@ class AdvancedMT5TradingMonitorGUI:
             current_state['last_update'] = datetime.now()
             
         except Exception as e:
-            self.terminal_log(f"❌ Phase determination error: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ Phase determination error: {str(e)}", "ERROR", critical=True)
             import traceback
             traceback.print_exc()
         
@@ -3294,11 +3293,11 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Color code based on entry state
             if entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
-                self.phases_tree.set(item, "Phase", f"🟡 {phase_display}")
+                self.phases_tree.set(item, "Phase", f"ðŸŸ¡ {phase_display}")
             elif entry_state == 'WINDOW_OPEN':
-                self.phases_tree.set(item, "Phase", f"🟠 {phase_display}")
+                self.phases_tree.set(item, "Phase", f"ðŸŸ  {phase_display}")
             else:  # SCANNING
-                self.phases_tree.set(item, "Phase", f"⚪ {phase_display}")
+                self.phases_tree.set(item, "Phase", f"âšª {phase_display}")
                 
     def update_indicators_display(self):
         """Update the indicators display for selected symbol"""
@@ -3316,7 +3315,7 @@ class AdvancedMT5TradingMonitorGUI:
         display_text = f"=== {symbol} Technical Indicators & Configuration ===\n\n"
         
         try:
-            display_text += f"📈 CURRENT MARKET DATA\n"
+            display_text += f"ðŸ“ˆ CURRENT MARKET DATA\n"
             
             # Get symbol precision for dynamic formatting
             state = self.strategy_states.get(symbol, {})
@@ -3330,15 +3329,15 @@ class AdvancedMT5TradingMonitorGUI:
                 display_text += f"Current Price: {current_price}\n"
             display_text += f"Trend Direction: {indicators.get('trend', 'N/A')}\n\n"
             
-            display_text += f"📊 EMA INDICATORS (Asset-Specific - ALL 5 EMAs)\n"
+            display_text += f"ðŸ“Š EMA INDICATORS (Asset-Specific - ALL 5 EMAs)\n"
             
             # Safe formatting for ALL EMAs (including Confirm EMA)
             # 1. Confirm EMA (CRITICAL for crossover detection)
             ema_confirm = indicators.get('ema_confirm', 'N/A')
             if isinstance(ema_confirm, (int, float)):
-                display_text += f"Confirm EMA (1):     {ema_confirm:.{digits}f}  ← Crossover Signal\n"
+                display_text += f"Confirm EMA (1):     {ema_confirm:.{digits}f}  â† Crossover Signal\n"
             else:
-                display_text += f"Confirm EMA (1):     {ema_confirm}  ← Crossover Signal\n"
+                display_text += f"Confirm EMA (1):     {ema_confirm}  â† Crossover Signal\n"
             
             # 2. Fast EMA
             ema_fast = indicators.get('ema_fast', 'N/A')
@@ -3364,11 +3363,11 @@ class AdvancedMT5TradingMonitorGUI:
             # 5. Filter EMA (trend filter)
             ema_filter = indicators.get('ema_filter', 'N/A')
             if isinstance(ema_filter, (int, float)):
-                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter:.{digits}f}  ← Trend Filter\n\n"
+                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter:.{digits}f}  â† Trend Filter\n\n"
             else:
-                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter}  ← Trend Filter\n\n"
+                display_text += f"Filter EMA ({indicators.get('ema_filter_period', '?')}):     {ema_filter}  â† Trend Filter\n\n"
             
-            display_text += f"⚡ ATR & RISK MANAGEMENT\n"
+            display_text += f"âš¡ ATR & RISK MANAGEMENT\n"
             
             # Safe formatting for ATR and levels
             atr = indicators.get('atr', 'N/A')
@@ -3379,15 +3378,15 @@ class AdvancedMT5TradingMonitorGUI:
                 
             sl_level = indicators.get('sl_level', 'N/A')
             if isinstance(sl_level, (int, float)):
-                display_text += f"Stop Loss Level: {sl_level:.{digits}f} (ATR × {indicators.get('sl_multiplier', '?')})\n"
+                display_text += f"Stop Loss Level: {sl_level:.{digits}f} (ATR Ã— {indicators.get('sl_multiplier', '?')})\n"
             else:
-                display_text += f"Stop Loss Level: {sl_level} (ATR × {indicators.get('sl_multiplier', '?')})\n"
+                display_text += f"Stop Loss Level: {sl_level} (ATR Ã— {indicators.get('sl_multiplier', '?')})\n"
                 
             tp_level = indicators.get('tp_level', 'N/A')
             if isinstance(tp_level, (int, float)):
-                display_text += f"Take Profit Level: {tp_level:.{digits}f} (ATR × {indicators.get('tp_multiplier', '?')})\n"
+                display_text += f"Take Profit Level: {tp_level:.{digits}f} (ATR Ã— {indicators.get('tp_multiplier', '?')})\n"
             else:
-                display_text += f"Take Profit Level: {tp_level} (ATR × {indicators.get('tp_multiplier', '?')})\n"
+                display_text += f"Take Profit Level: {tp_level} (ATR Ã— {indicators.get('tp_multiplier', '?')})\n"
                 
             # Safe risk:reward calculation
             risk_reward = 0
@@ -3399,7 +3398,7 @@ class AdvancedMT5TradingMonitorGUI:
             else:
                 display_text += f"Risk:Reward Ratio: Not available\n\n"
             
-            display_text += f"🕐 ENTRY SCHEDULE\n"
+            display_text += f"ðŸ• ENTRY SCHEDULE\n"
             use_time_filter = config.get('Use Time Range Filter', 'False')
             if 'True' in str(use_time_filter):
                 start_hour = config.get('Entry Start Hour (UTC)', 'N/A')
@@ -3412,7 +3411,7 @@ class AdvancedMT5TradingMonitorGUI:
                 display_text += f"Time Filter: DISABLED (24/7 trading)\n"
             display_text += "\n"
             
-            display_text += f"🎯 PULLBACK ENTRY SYSTEM\n"
+            display_text += f"ðŸŽ¯ PULLBACK ENTRY SYSTEM\n"
             use_pullback = config.get('Use Pullback Entry System', 'False')
             if 'True' in str(use_pullback):
                 max_candles = config.get('Max Pullback Candles', 'N/A')
@@ -3426,7 +3425,7 @@ class AdvancedMT5TradingMonitorGUI:
                 display_text += f"Pullback System: DISABLED (Direct entries)\n"
             display_text += "\n"
             
-            display_text += f"🔍 ENTRY FILTERS\n"
+            display_text += f"ðŸ” ENTRY FILTERS\n"
             # ATR Filter
             use_atr_filter = config.get('Use ATR Volatility Filter', 'False')
             if 'True' in str(use_atr_filter):
@@ -3449,7 +3448,7 @@ class AdvancedMT5TradingMonitorGUI:
             if 'True' in str(use_angle_filter):
                 min_angle = config.get('Min EMA Angle (degrees)', 'N/A')
                 max_angle = config.get('Max EMA Angle (degrees)', 'N/A')
-                display_text += f"LONG Angle Filter: ENABLED ({min_angle}° - {max_angle}°)\n"
+                display_text += f"LONG Angle Filter: ENABLED ({min_angle}Â° - {max_angle}Â°)\n"
             else:
                 display_text += f"LONG Angle Filter: DISABLED\n"
                 
@@ -3457,7 +3456,7 @@ class AdvancedMT5TradingMonitorGUI:
             if 'True' in str(use_short_angle_filter):
                 min_angle = config.get('Short Min EMA Angle (degrees)', 'N/A')
                 max_angle = config.get('Short Max EMA Angle (degrees)', 'N/A')
-                display_text += f"SHORT Angle Filter: ENABLED ({min_angle}° - {max_angle}°)\n"
+                display_text += f"SHORT Angle Filter: ENABLED ({min_angle}Â° - {max_angle}Â°)\n"
             else:
                 display_text += f"SHORT Angle Filter: DISABLED\n"
                 
@@ -3479,7 +3478,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Strategy state info
             state = self.strategy_states[symbol]
-            display_text += f"📊 CURRENT STRATEGY STATE\n"
+            display_text += f"ðŸ“Š CURRENT STRATEGY STATE\n"
             display_text += f"Phase: {state['phase']}\n"
             display_text += f"Armed Direction: {state.get('armed_direction', 'None')}\n"
             display_text += f"Pullback Count: {state.get('pullback_count', 0)}\n"
@@ -3538,7 +3537,7 @@ class AdvancedMT5TradingMonitorGUI:
             
         symbol = self.chart_symbol_var.get()
         if symbol not in self.chart_data:
-            self.terminal_log(f"⚠️ No chart data available for {symbol}", "ERROR")
+            self.terminal_log(f"âš ï¸ No chart data available for {symbol}", "ERROR")
             return
             
         try:
@@ -3572,8 +3571,8 @@ class AdvancedMT5TradingMonitorGUI:
             filter_period = self.extract_numeric_value(config.get('ema_filter_price_length', config.get('Price Filter EMA Period', '100')))
             
             # Plot ALL EMAs with asset-specific periods
-            # ✅ CRITICAL: Use adjust=False to match MT5 EMA calculation
-            # ✅ CRITICAL: Only plot from point where EMA stabilizes (3x period minimum)
+            # âœ… CRITICAL: Use adjust=False to match MT5 EMA calculation
+            # âœ… CRITICAL: Only plot from point where EMA stabilizes (3x period minimum)
             
             # 1. Confirm EMA (most important for crossovers)
             min_bars_confirm = int(confirm_period * 3)  # Need 3x period to stabilize
@@ -3728,10 +3727,10 @@ class AdvancedMT5TradingMonitorGUI:
             self.fig.tight_layout()
             self.canvas.draw()
             
-            self.terminal_log(f"📊 Candlestick chart refreshed for {symbol} (Phase: {state['phase']})", "NORMAL")
+            self.terminal_log(f"ðŸ“Š Candlestick chart refreshed for {symbol} (Phase: {state['phase']})", "NORMAL")
             
         except Exception as e:
-            self.terminal_log(f"❌ Chart refresh error: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Chart refresh error: {str(e)}", "ERROR")
             
     def plot_candlesticks(self, ax, df):
         """Plot candlestick chart"""
@@ -3788,7 +3787,7 @@ class AdvancedMT5TradingMonitorGUI:
         except queue.Empty:
             pass
         except Exception as e:
-            self.terminal_log(f"❌ Phase update error: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Phase update error: {str(e)}", "ERROR")
             
         # Schedule next update
         self.root.after(1000, self.process_phase_updates)
@@ -3798,7 +3797,7 @@ class AdvancedMT5TradingMonitorGUI:
         try:
             summary_lines = []
             summary_lines.append("=" * 60)
-            summary_lines.append("📊 STRATEGY PHASE SUMMARY - ALL ASSETS")
+            summary_lines.append("ðŸ“Š STRATEGY PHASE SUMMARY - ALL ASSETS")
             summary_lines.append("=" * 60)
             
             # Group by phase for better overview
@@ -3823,10 +3822,10 @@ class AdvancedMT5TradingMonitorGUI:
             for phase_name, assets in phases.items():
                 if assets:
                     phase_emoji = {
-                        'NORMAL': '⚪',
-                        'WAITING_PULLBACK': '🟡', 
-                        'WAITING_BREAKOUT': '🟠'
-                    }.get(phase_name, '⚫')
+                        'NORMAL': 'âšª',
+                        'WAITING_PULLBACK': 'ðŸŸ¡', 
+                        'WAITING_BREAKOUT': 'ðŸŸ '
+                    }.get(phase_name, 'âš«')
                     
                     summary_lines.append(f"{phase_emoji} {phase_name} ({len(assets)} assets):")
                     
@@ -3840,7 +3839,7 @@ class AdvancedMT5TradingMonitorGUI:
                     summary_lines.append("")
             
             # Add timestamp
-            summary_lines.append(f"⏰ Updated: {datetime.now().strftime('%H:%M:%S')}")
+            summary_lines.append(f"â° Updated: {datetime.now().strftime('%H:%M:%S')}")
             summary_lines.append("=" * 60)
             
             # Log each line
@@ -3848,19 +3847,19 @@ class AdvancedMT5TradingMonitorGUI:
                 self.terminal_log(line, "NORMAL")
                 
         except Exception as e:
-            self.terminal_log(f"❌ Phase summary error: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Phase summary error: {str(e)}", "ERROR")
         
     def log_hourly_summary(self):
         """Log hourly activity summary to reduce terminal clutter"""
         now = datetime.now()
         if (now - self.last_hourly_summary).total_seconds() >= 3600:  # Every hour
-            # ✅ SET RECURSION GUARD: Prevent terminal_log from calling this again
+            # âœ… SET RECURSION GUARD: Prevent terminal_log from calling this again
             self._in_hourly_summary = True
             try:
                 self.terminal_log("=" * 70, "INFO", critical=True)
-                self.terminal_log(f"📊 HOURLY SUMMARY ({now.strftime('%H:%M')})", "SUCCESS", critical=True)
-                self.terminal_log(f"   🔄 Crossovers: {self.hourly_events['crossovers']} | 🎯 Armed: {self.hourly_events['armed_transitions']} | 📉 Pullbacks: {self.hourly_events['pullbacks_detected']}", "INFO", critical=True)
-                self.terminal_log(f"   🪟 Windows: {self.hourly_events['windows_opened']} | 🚀 Breakouts: {self.hourly_events['breakouts']} | ⚠️ Invalidations: {self.hourly_events['invalidations']} | 💰 Trades: {self.hourly_events['trades_executed']}", "INFO", critical=True)
+                self.terminal_log(f"ðŸ“Š HOURLY SUMMARY ({now.strftime('%H:%M')})", "SUCCESS", critical=True)
+                self.terminal_log(f"   ðŸ”„ Crossovers: {self.hourly_events['crossovers']} | ðŸŽ¯ Armed: {self.hourly_events['armed_transitions']} | ðŸ“‰ Pullbacks: {self.hourly_events['pullbacks_detected']}", "INFO", critical=True)
+                self.terminal_log(f"   ðŸªŸ Windows: {self.hourly_events['windows_opened']} | ðŸš€ Breakouts: {self.hourly_events['breakouts']} | âš ï¸ Invalidations: {self.hourly_events['invalidations']} | ðŸ’° Trades: {self.hourly_events['trades_executed']}", "INFO", critical=True)
                 self.terminal_log("=" * 70, "INFO", critical=True)
                 
                 # Reset counters
@@ -3868,18 +3867,18 @@ class AdvancedMT5TradingMonitorGUI:
                     self.hourly_events[key] = 0
                 self.last_hourly_summary = now
             finally:
-                # ✅ CLEAR RECURSION GUARD: Always clear, even if error occurs
+                # âœ… CLEAR RECURSION GUARD: Always clear, even if error occurs
                 self._in_hourly_summary = False
     
     def terminal_log(self, message, level="NORMAL", critical=False):
         """Add message to terminal display - only critical events by default"""
         
-        # ✅ RECURSION GUARD: Prevent infinite loop during hourly summary
+        # âœ… RECURSION GUARD: Prevent infinite loop during hourly summary
         if not getattr(self, '_in_hourly_summary', False):
             # Track events for hourly summary
             if "CROSSED ABOVE" in message or "CROSSED BELOW" in message:
                 self.hourly_events['crossovers'] += 1
-            elif "CROSSOVER - State: SCANNING → ARMED" in message:
+            elif "CROSSOVER - State: SCANNING â†’ ARMED" in message:
                 self.hourly_events['armed_transitions'] += 1
             elif "Pullback CONFIRMED" in message:
                 self.hourly_events['pullbacks_detected'] += 1
@@ -3901,7 +3900,7 @@ class AdvancedMT5TradingMonitorGUI:
             "PHASE CHANGE", "WAITING_PULLBACK", "WAITING_BREAKOUT",  # Phase changes
             "ENTRY", "EXIT", "BREAKOUT DETECTED", "SIGNAL",  # Trading signals
             "TRADE EXECUTED", "ORDER FILLED", "POSITION OPENED",  # Trade execution
-            "ERROR", "⚠️", "❌", "🎯", "🟢", "🔴"  # Errors and alerts
+            "ERROR", "âš ï¸", "âŒ", "ðŸŽ¯", "ðŸŸ¢", "ðŸ”´"  # Errors and alerts
         ]
         
         # Check if message contains critical keywords
@@ -3954,11 +3953,11 @@ class AdvancedMT5TradingMonitorGUI:
                 f.write(logs)
                 
             messagebox.showinfo("Save Complete", f"Terminal log saved to {filename}")
-            self.terminal_log(f"✅ Terminal log saved to {filename}", "SUCCESS")
+            self.terminal_log(f"âœ… Terminal log saved to {filename}", "SUCCESS")
             
         except Exception as e:
             messagebox.showerror("Save Error", f"Failed to save: {str(e)}")
-            self.terminal_log(f"❌ Save error: {str(e)}", "ERROR")
+            self.terminal_log(f"âŒ Save error: {str(e)}", "ERROR")
             
     # Event handlers
     def on_strategy_phase_select(self, event):
@@ -4029,7 +4028,7 @@ class AdvancedMT5TradingMonitorGUI:
             True if trade executed successfully, False otherwise
         """
         if len(df) < 1:
-            self.terminal_log(f"❌ {symbol}: Cannot execute entry - no price data", "ERROR", critical=True)
+            self.terminal_log(f"âŒ {symbol}: Cannot execute entry - no price data", "ERROR", critical=True)
             return False
         
         current_state = self.strategy_states[symbol]
@@ -4040,27 +4039,27 @@ class AdvancedMT5TradingMonitorGUI:
         
         # Final time check
         if not self._is_in_trading_time_range(current_dt, config):
-            self.terminal_log(f"⏰ {symbol}: Entry rejected - outside trading hours", 
+            self.terminal_log(f"â° {symbol}: Entry rejected - outside trading hours", 
                             "WARNING", critical=True)
             return False
         
         # Execute trade
-        self.terminal_log(f"⚡ {symbol}: Executing STANDARD {direction} entry at {entry_price:.{digits}f}", 
+        self.terminal_log(f"âš¡ {symbol}: Executing STANDARD {direction} entry at {entry_price:.{digits}f}", 
                         "INFO", critical=True)
         
         trade_executed = self.execute_trade(symbol, direction, entry_price, config)
         
         if trade_executed:
-            self.terminal_log(f"✅ {symbol}: STANDARD {direction} trade executed successfully!", 
+            self.terminal_log(f"âœ… {symbol}: STANDARD {direction} trade executed successfully!", 
                             "SUCCESS", critical=True)
             # Lock state to prevent duplicate entries
             current_state['entry_state'] = 'IN_TRADE'
             current_state['phase'] = 'TRADE_ACTIVE'
-            self.terminal_log(f"🔒 {symbol}: State locked - No new signals until position closes", 
+            self.terminal_log(f"ðŸ”’ {symbol}: State locked - No new signals until position closes", 
                             "INFO", critical=True)
             return True
         else:
-            self.terminal_log(f"❌ {symbol}: STANDARD {direction} trade execution FAILED", 
+            self.terminal_log(f"âŒ {symbol}: STANDARD {direction} trade execution FAILED", 
                             "ERROR", critical=True)
             return False
             
@@ -4074,42 +4073,42 @@ class AdvancedMT5TradingMonitorGUI:
             config: Strategy configuration with risk parameters
         """
         if not mt5 or not self.mt5_connected:
-            self.terminal_log(f"❌ {symbol}: Cannot execute trade - MT5 not connected", "ERROR", critical=True)
+            self.terminal_log(f"âŒ {symbol}: Cannot execute trade - MT5 not connected", "ERROR", critical=True)
             return False
             
         try:
             # Get symbol info
             symbol_info = mt5.symbol_info(symbol)  # type: ignore
             if symbol_info is None:
-                self.terminal_log(f"❌ {symbol}: Symbol not found in MT5", "ERROR", critical=True)
+                self.terminal_log(f"âŒ {symbol}: Symbol not found in MT5", "ERROR", critical=True)
                 return False
                 
             if not symbol_info.visible:
                 if not mt5.symbol_select(symbol, True):  # type: ignore
-                    self.terminal_log(f"❌ {symbol}: Failed to select symbol", "ERROR", critical=True)
+                    self.terminal_log(f"âŒ {symbol}: Failed to select symbol", "ERROR", critical=True)
                     return False
             
             # Get account info for risk calculation
             account_info = mt5.account_info()  # type: ignore
             if account_info is None:
-                self.terminal_log(f"❌ {symbol}: Failed to get account info", "ERROR", critical=True)
+                self.terminal_log(f"âŒ {symbol}: Failed to get account info", "ERROR", critical=True)
                 return False
             
-            # ✅ CRITICAL FIX: Check if position already exists for this symbol
+            # âœ… CRITICAL FIX: Check if position already exists for this symbol
             positions = mt5.positions_get(symbol=symbol)  # type: ignore
             if positions is not None and len(positions) > 0:
-                self.terminal_log(f"⚠️ {symbol}: Position already exists - Skipping duplicate entry", "WARNING", critical=True)
+                self.terminal_log(f"âš ï¸ {symbol}: Position already exists - Skipping duplicate entry", "WARNING", critical=True)
                 for pos in positions:
                     self.terminal_log(f"   Existing: Ticket #{pos.ticket} | {pos.type} | Volume: {pos.volume} lots", 
                                     "WARNING", critical=True)
                 return False  # Don't open duplicate position
             
-            # ═══════════════════════════════════════════════════════════════════
+            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             # DALIO ALL-WEATHER PORTFOLIO ALLOCATION - POSITION SIZING
-            # ═══════════════════════════════════════════════════════════════════
+            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             # Calculate position size using asset-specific allocation
-            # Risk = risk_percent × allocated_capital (NOT total portfolio)
-            # ═══════════════════════════════════════════════════════════════════
+            # Risk = risk_percent Ã— allocated_capital (NOT total portfolio)
+            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             
             # Get real-time account balance from MT5
             balance = account_info.balance
@@ -4127,7 +4126,7 @@ class AdvancedMT5TradingMonitorGUI:
             
             # Log allocation details for transparency
             self.terminal_log(
-                f"💰 {symbol}: Dalio Allocation System",
+                f"ðŸ’° {symbol}: Dalio Allocation System",
                 "INFO", critical=True
             )
             self.terminal_log(
@@ -4149,11 +4148,11 @@ class AdvancedMT5TradingMonitorGUI:
             atr = indicators.get('atr', None)
             
             # Log ATR retrieval for debugging
-            self.terminal_log(f"📊 {symbol}: ATR Check | Value={atr} | Has_indicators={bool(indicators)} | State_keys={list(current_state.keys())}", 
+            self.terminal_log(f"ðŸ“Š {symbol}: ATR Check | Value={atr} | Has_indicators={bool(indicators)} | State_keys={list(current_state.keys())}", 
                             "INFO", critical=True)
             
             if atr is None or atr <= 0 or (isinstance(atr, float) and (pd.isna(atr) if pd else False)):
-                self.terminal_log(f"❌ {symbol}: Invalid ATR value for stop loss calculation (ATR={atr})", 
+                self.terminal_log(f"âŒ {symbol}: Invalid ATR value for stop loss calculation (ATR={atr})", 
                                 "ERROR", critical=True)
                 return False
             
@@ -4165,28 +4164,28 @@ class AdvancedMT5TradingMonitorGUI:
                 atr_sl_multiplier = self.extract_float_value(config.get('short_atr_sl_multiplier', '4.5'))
                 atr_tp_multiplier = self.extract_float_value(config.get('short_atr_tp_multiplier', '6.5'))
             
-            self.terminal_log(f"📊 {symbol}: ATR={atr:.5f} | SL_Multi={atr_sl_multiplier} | TP_Multi={atr_tp_multiplier}", 
+            self.terminal_log(f"ðŸ“Š {symbol}: ATR={atr:.5f} | SL_Multi={atr_sl_multiplier} | TP_Multi={atr_tp_multiplier}", 
                             "INFO", critical=True)
             
             # Calculate stop loss distance
             sl_distance = atr * atr_sl_multiplier
             
-            self.terminal_log(f"📊 {symbol}: SL_Distance={sl_distance:.5f} (ATR {atr:.5f} × {atr_sl_multiplier})", 
+            self.terminal_log(f"ðŸ“Š {symbol}: SL_Distance={sl_distance:.5f} (ATR {atr:.5f} Ã— {atr_sl_multiplier})", 
                             "INFO", critical=True)
             
             # Calculate lot size based on risk
             # For commodities (XAUUSD, XAGUSD): 1 lot = contract_size units (e.g., 100 oz)
             # For forex (EURUSD, etc.): 1 lot = 100,000 units
-            # Formula: lot_size = risk_amount / (sl_distance_in_price × pip_value_per_lot)
+            # Formula: lot_size = risk_amount / (sl_distance_in_price Ã— pip_value_per_lot)
             
             point = symbol_info.point
             contract_size = symbol_info.trade_contract_size  # 100 for XAUUSD, 100000 for EURUSD/GBPUSD
             tick_value = symbol_info.trade_tick_value  # Value per tick in account currency
             tick_size = symbol_info.trade_tick_size
             
-            # 🚨 CRITICAL FIX: Use MT5's tick_value directly (it's correct per broker contract specs)
-            # The formula is: lot_size = risk / (sl_distance_points × tick_value_per_tick × ticks_per_point)
-            # Simplified: lot_size = risk / (sl_distance_in_points × value_per_point)
+            # ðŸš¨ CRITICAL FIX: Use MT5's tick_value directly (it's correct per broker contract specs)
+            # The formula is: lot_size = risk / (sl_distance_points Ã— tick_value_per_tick Ã— ticks_per_point)
+            # Simplified: lot_size = risk / (sl_distance_in_points Ã— value_per_point)
             
             # Calculate value per point from MT5 symbol info
             # tick_value = value change per tick in account currency
@@ -4194,7 +4193,7 @@ class AdvancedMT5TradingMonitorGUI:
             # point = minimum price representation (usually same as tick_size)
             
             if tick_size > 0 and point > 0:
-                # Value per point = tick_value × (point / tick_size)
+                # Value per point = tick_value Ã— (point / tick_size)
                 # For most symbols: point == tick_size, so value_per_point = tick_value
                 value_per_point = tick_value * (point / tick_size)
             else:
@@ -4206,20 +4205,20 @@ class AdvancedMT5TradingMonitorGUI:
             sl_distance_in_points = sl_distance / point
             
             # Calculate lot size using broker-specific values
-            # Formula: lot_size = risk_amount / (sl_distance_in_points × value_per_point)
+            # Formula: lot_size = risk_amount / (sl_distance_in_points Ã— value_per_point)
             if value_per_point > 0 and sl_distance_in_points > 0:
                 lot_size = risk_amount / (sl_distance_in_points * value_per_point)
             else:
-                self.terminal_log(f"❌ {symbol}: Invalid calculation values - value_per_point={value_per_point}, sl_distance_in_points={sl_distance_in_points}", "ERROR", critical=True)
+                self.terminal_log(f"âŒ {symbol}: Invalid calculation values - value_per_point={value_per_point}, sl_distance_in_points={sl_distance_in_points}", "ERROR", critical=True)
                 return False
             
-            # 💰 Position Sizing Calculation with Detailed Logging
-            self.terminal_log(f"═══════════════════════════════════════════════════", "INFO", critical=True)
-            self.terminal_log(f"� {symbol}: POSITION SIZING CALCULATION", "INFO", critical=True)
-            self.terminal_log(f"═══════════════════════════════════════════════════", "INFO", critical=True)
+            # ðŸ’° Position Sizing Calculation with Detailed Logging
+            self.terminal_log(f"â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•", "INFO", critical=True)
+            self.terminal_log(f"ï¿½ {symbol}: POSITION SIZING CALCULATION", "INFO", critical=True)
+            self.terminal_log(f"â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•", "INFO", critical=True)
             
             # Broker Symbol Specifications
-            self.terminal_log(f"📊 BROKER SPECIFICATIONS:", "DEBUG", critical=True)
+            self.terminal_log(f"ðŸ“Š BROKER SPECIFICATIONS:", "DEBUG", critical=True)
             self.terminal_log(f"   Symbol: {symbol} | Digits: {symbol_info.digits}", "DEBUG", critical=True)
             self.terminal_log(f"   Contract Size: {contract_size:,.0f}", "DEBUG", critical=True)
             self.terminal_log(f"   Point: {point:.5f} (minimum price unit)", "DEBUG", critical=True)
@@ -4228,33 +4227,33 @@ class AdvancedMT5TradingMonitorGUI:
             self.terminal_log(f"   Calculated Value per Point: ${value_per_point:.5f}", "DEBUG", critical=True)
             
             # Dalio Allocation
-            self.terminal_log(f"� DALIO ALLOCATION:", "DEBUG", critical=True)
+            self.terminal_log(f"ï¿½ DALIO ALLOCATION:", "DEBUG", critical=True)
             self.terminal_log(f"   Portfolio Balance: ${balance:,.2f}", "DEBUG", critical=True)
-            self.terminal_log(f"   Asset Allocation: {allocation_percent*100:.0f}% → ${allocated_capital:,.2f}", "DEBUG", critical=True)
-            self.terminal_log(f"   Risk per Trade: {risk_percent*100:.1f}% of allocated → ${risk_amount:.2f}", "DEBUG", critical=True)
+            self.terminal_log(f"   Asset Allocation: {allocation_percent*100:.0f}% â†’ ${allocated_capital:,.2f}", "DEBUG", critical=True)
+            self.terminal_log(f"   Risk per Trade: {risk_percent*100:.1f}% of allocated â†’ ${risk_amount:.2f}", "DEBUG", critical=True)
             
             # Stop Loss Distance
-            self.terminal_log(f"🛑 STOP LOSS:", "DEBUG", critical=True)
+            self.terminal_log(f"ðŸ›‘ STOP LOSS:", "DEBUG", critical=True)
             self.terminal_log(f"   SL Distance (price): {sl_distance:.5f}", "DEBUG", critical=True)
             self.terminal_log(f"   SL Distance (points): {sl_distance_in_points:.1f}", "DEBUG", critical=True)
             self.terminal_log(f"   ATR Multiplier: {atr_sl_multiplier:.1f}", "DEBUG", critical=True)
             
             # Position Size Calculation
-            self.terminal_log(f"📐 LOT SIZE FORMULA:", "DEBUG", critical=True)
-            self.terminal_log(f"   lot_size = risk_amount / (sl_distance_points × value_per_point)", "DEBUG", critical=True)
-            self.terminal_log(f"   lot_size = ${risk_amount:.2f} / ({sl_distance_in_points:.1f} × ${value_per_point:.5f})", "DEBUG", critical=True)
+            self.terminal_log(f"ðŸ“ LOT SIZE FORMULA:", "DEBUG", critical=True)
+            self.terminal_log(f"   lot_size = risk_amount / (sl_distance_points Ã— value_per_point)", "DEBUG", critical=True)
+            self.terminal_log(f"   lot_size = ${risk_amount:.2f} / ({sl_distance_in_points:.1f} Ã— ${value_per_point:.5f})", "DEBUG", critical=True)
             self.terminal_log(f"   lot_size = ${risk_amount:.2f} / {sl_distance_in_points * value_per_point:.5f}", "DEBUG", critical=True)
             self.terminal_log(f"   lot_size = {lot_size:.6f} lots (BEFORE limits)", "DEBUG", critical=True)
             
             # Risk Verification
             actual_risk_check = lot_size * sl_distance_in_points * value_per_point
-            self.terminal_log(f"✅ RISK VERIFICATION:", "DEBUG", critical=True)
-            self.terminal_log(f"   {lot_size:.6f} lots × {sl_distance_in_points:.1f} points × ${value_per_point:.5f} = ${actual_risk_check:.2f}", "DEBUG", critical=True)
+            self.terminal_log(f"âœ… RISK VERIFICATION:", "DEBUG", critical=True)
+            self.terminal_log(f"   {lot_size:.6f} lots Ã— {sl_distance_in_points:.1f} points Ã— ${value_per_point:.5f} = ${actual_risk_check:.2f}", "DEBUG", critical=True)
             risk_diff = abs(actual_risk_check - risk_amount)
             if risk_diff < 0.50:
-                self.terminal_log(f"   ✅ VERIFIED: Actual risk ${actual_risk_check:.2f} matches expected ${risk_amount:.2f}", "INFO", critical=True)
+                self.terminal_log(f"   âœ… VERIFIED: Actual risk ${actual_risk_check:.2f} matches expected ${risk_amount:.2f}", "INFO", critical=True)
             else:
-                self.terminal_log(f"   ⚠️ WARNING: Risk mismatch! Expected ${risk_amount:.2f}, got ${actual_risk_check:.2f} (diff: ${risk_diff:.2f})", "WARNING", critical=True)
+                self.terminal_log(f"   âš ï¸ WARNING: Risk mismatch! Expected ${risk_amount:.2f}, got ${actual_risk_check:.2f} (diff: ${risk_diff:.2f})", "WARNING", critical=True)
             
             # Apply lot size limits
             lot_min = symbol_info.volume_min
@@ -4286,11 +4285,11 @@ class AdvancedMT5TradingMonitorGUI:
             sl_price = round(sl_price, digits)
             tp_price = round(tp_price, digits)
             
-            # ⚡ CRITICAL FIX: Detect broker's supported filling mode
+            # âš¡ CRITICAL FIX: Detect broker's supported filling mode
             # Error 10030 = INVALID_FILL occurs when using unsupported filling mode
             symbol_info = mt5.symbol_info(symbol)  # type: ignore
             if symbol_info is None:
-                self.terminal_log(f"❌ {symbol}: Cannot get symbol info", "ERROR", critical=True)
+                self.terminal_log(f"âŒ {symbol}: Cannot get symbol info", "ERROR", critical=True)
                 return False
             
             # Determine filling mode based on broker's support
@@ -4306,7 +4305,7 @@ class AdvancedMT5TradingMonitorGUI:
                 # Fallback to FOK
                 filling_type = mt5.ORDER_FILLING_FOK  # type: ignore
             
-            self.terminal_log(f"🔧 {symbol}: Using filling mode {filling_type} (broker supports: {symbol_info.filling_mode})", 
+            self.terminal_log(f"ðŸ”§ {symbol}: Using filling mode {filling_type} (broker supports: {symbol_info.filling_mode})", 
                             "DEBUG", critical=True)
             
             # Create order request
@@ -4322,11 +4321,11 @@ class AdvancedMT5TradingMonitorGUI:
                 "magic": 234000,
                 "comment": f"Sunrise_{direction}",
                 "type_time": mt5.ORDER_TIME_GTC,  # type: ignore
-                "type_filling": filling_type,  # ✅ Use broker-compatible mode
+                "type_filling": filling_type,  # âœ… Use broker-compatible mode
             }
             
             # Log trade details
-            self.terminal_log(f"📊 {symbol}: Preparing {direction} order", "INFO", critical=True)
+            self.terminal_log(f"ðŸ“Š {symbol}: Preparing {direction} order", "INFO", critical=True)
             self.terminal_log(f"   Entry: {price} | SL: {sl_price} (dist: {sl_distance:.5f}) | TP: {tp_price}", "INFO", critical=True)
             self.terminal_log(f"   Volume: {lot_size} lots | Risk: ${risk_amount:.2f} ({risk_percent*100:.1f}%)", "INFO", critical=True)
             self.terminal_log(f"   ATR: {atr:.5f} | SL_Multi: {atr_sl_multiplier} | TP_Multi: {atr_tp_multiplier}", "INFO", critical=True)
@@ -4335,23 +4334,23 @@ class AdvancedMT5TradingMonitorGUI:
             result = mt5.order_send(request)  # type: ignore
             
             if result is None:
-                self.terminal_log(f"❌ {symbol}: Order send failed - No response", "ERROR", critical=True)
+                self.terminal_log(f"âŒ {symbol}: Order send failed - No response", "ERROR", critical=True)
                 return False
             
             if result.retcode != mt5.TRADE_RETCODE_DONE:  # type: ignore
-                self.terminal_log(f"❌ {symbol}: Order failed - Code: {result.retcode}, {result.comment}", 
+                self.terminal_log(f"âŒ {symbol}: Order failed - Code: {result.retcode}, {result.comment}", 
                                 "ERROR", critical=True)
                 return False
             
             # Success!
-            self.terminal_log(f"✅ {symbol}: Order executed successfully!", "SUCCESS", critical=True)
+            self.terminal_log(f"âœ… {symbol}: Order executed successfully!", "SUCCESS", critical=True)
             self.terminal_log(f"   Order: #{result.order} | Deal: #{result.deal}", "SUCCESS", critical=True)
             self.terminal_log(f"   Volume: {result.volume} lots @ {result.price}", "SUCCESS", critical=True)
             
             return True
             
         except Exception as e:
-            self.terminal_log(f"❌ {symbol}: Trade execution error: {str(e)}", "ERROR", critical=True)
+            self.terminal_log(f"âŒ {symbol}: Trade execution error: {str(e)}", "ERROR", critical=True)
             return False
     
     def disconnect_mt5(self):
@@ -4362,7 +4361,7 @@ class AdvancedMT5TradingMonitorGUI:
         self.connection_status_label.config(text="Disconnected", foreground="red")
         self.connect_button.config(text="Connect")
         
-        self.terminal_log("🔌 Disconnected from MT5", "NORMAL")
+        self.terminal_log("ðŸ”Œ Disconnected from MT5", "NORMAL")
         
     def on_closing(self):
         """Handle application closing"""
@@ -4373,7 +4372,7 @@ class AdvancedMT5TradingMonitorGUI:
             if self.mt5_connected:
                 self.disconnect_mt5()
                 
-            self.terminal_log("🔥 Application closing...", "NORMAL")
+            self.terminal_log("ðŸ”¥ Application closing...", "NORMAL")
             
         except Exception as e:
             self.logger.error(f"Error during shutdown: {str(e)}")
@@ -4383,17 +4382,17 @@ class AdvancedMT5TradingMonitorGUI:
 
 def main():
     """Main application entry point"""
-    print(f"🚀 Starting Advanced MT5 Trading Monitor v{APP_VERSION}...")
+    print(f"ðŸš€ Starting Advanced MT5 Trading Monitor v{APP_VERSION}...")
     print("=" * 60)
     
     # Check dependencies
     if not DEPENDENCIES_AVAILABLE:
-        print("❌ ERROR: Required dependencies not found!")
+        print("âŒ ERROR: Required dependencies not found!")
         print("Please install: pip install MetaTrader5 pandas numpy")
         return
         
     if not MATPLOTLIB_AVAILABLE:
-        print("⚠️  WARNING: Chart libraries not found!")
+        print("âš ï¸  WARNING: Chart libraries not found!")
         print("For live charts, install: pip install matplotlib mplfinance")
         print("Continuing without charts...")
         print()
@@ -4403,16 +4402,17 @@ def main():
         root = tk.Tk()
         app = AdvancedMT5TradingMonitorGUI(root)
         
-        print("✅ Advanced GUI initialized successfully")
-        print("📊 Starting strategy phase monitoring...")
+        print("âœ… Advanced GUI initialized successfully")
+        print("ðŸ“Š Starting strategy phase monitoring...")
         print("=" * 60)
         
         root.mainloop()
         
     except Exception as e:
-        print(f"❌ Error starting GUI: {str(e)}")
+        print(f"âŒ Error starting GUI: {str(e)}")
         import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":
     main()
+
