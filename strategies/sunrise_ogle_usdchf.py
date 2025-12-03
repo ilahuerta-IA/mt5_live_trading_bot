@@ -2445,60 +2445,6 @@ class SunriseOgle(bt.Strategy):
 
         return True
     
-    def _is_in_trading_time_range(self, dt):
-        """Check if current time is within configured trading hours
-        
-        Converts broker time to UTC using offset from config file before checking.
-        This ensures time filter works correctly regardless of broker timezone.
-        
-        Args:
-            dt: datetime object from broker (in broker's local time)
-            
-        Returns:
-            bool: True if within trading hours, False otherwise
-        """
-        if not self.p.use_time_range_filter:
-            return True
-        
-        # Load UTC offset from config file
-        utc_offset = 1  # Default
-        try:
-            import os
-            import json
-            config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'broker_timezone.json')
-            if os.path.exists(config_file):
-                with open(config_file, 'r') as f:
-                    config_data = json.load(f)
-                    utc_offset = config_data.get('utc_offset', 1)
-        except Exception as e:
-            # If config file doesn't exist or can't be read, use default UTC+1
-            pass
-        
-        # Convert broker time to UTC by subtracting offset
-        from datetime import timedelta
-        utc_time = dt - timedelta(hours=utc_offset)
-        
-        current_hour = utc_time.hour
-        current_minute = utc_time.minute
-        
-        start_hour = self.p.entry_start_hour
-        start_minute = self.p.entry_start_minute
-        end_hour = self.p.entry_end_hour
-        end_minute = self.p.entry_end_minute
-        
-        # Convert times to minutes since midnight for easier comparison
-        current_time_minutes = current_hour * 60 + current_minute
-        start_time_minutes = start_hour * 60 + start_minute
-        end_time_minutes = end_hour * 60 + end_minute
-        
-        # Handle overnight ranges (e.g., 21:00 to 03:00)
-        if start_time_minutes > end_time_minutes:
-            # Trading window crosses midnight
-            return current_time_minutes >= start_time_minutes or current_time_minutes <= end_time_minutes
-        else:
-            # Normal trading window (same day)
-            return start_time_minutes <= current_time_minutes <= end_time_minutes
-    
     def _basic_short_entry_conditions(self):
         """Check basic SHORT entry conditions 1 & 2 for pullback system"""
         # 1. Previous candle bearish check (optional - opposite of LONG)
