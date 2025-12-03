@@ -12,6 +12,7 @@ import time
 import json
 import os
 import sys
+import re
 from datetime import datetime, timedelta
 import logging
 from typing import Dict, List, Optional, Any, Tuple
@@ -2401,42 +2402,70 @@ class AdvancedMT5TradingMonitorGUI:
             indicators['error'] = str(e)
             
         return indicators
-            
-        return indicators
+    
+    # ==========
+    # VALUE EXTRACTION UTILITIES (Consolidated)
+    # ==========
+    
+    def _extract_value(self, value, value_type: str = 'auto', default=None):
+        """
+        Unified value extractor for configuration parsing.
         
-    def extract_numeric_value(self, value_str):
-        """Extract numeric value from configuration string"""
-        if isinstance(value_str, (int, float)):
-            return int(value_str) if isinstance(value_str, float) else value_str
-        if isinstance(value_str, str):
-            # Remove common characters and extract number
-            import re
-            match = re.search(r'(\d+(?:\.\d+)?)', value_str)
+        Args:
+            value: The value to extract (can be str, int, float, bool)
+            value_type: 'int', 'float', 'bool', or 'auto' (infer from value)
+            default: Default value if extraction fails
+            
+        Returns:
+            Extracted value of the specified type
+        """
+        # Handle None
+        if value is None:
+            return default
+            
+        # Boolean extraction
+        if value_type == 'bool':
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                return value.lower() in ('true', '1', 'yes', 'on')
+            return default if default is not None else False
+        
+        # Numeric extraction (int or float)
+        if isinstance(value, (int, float)):
+            if value_type == 'int':
+                return int(value)
+            elif value_type == 'float':
+                return float(value)
+            else:  # auto
+                return value
+                
+        if isinstance(value, str):
+            match = re.search(r'(\d+(?:\.\d+)?)', value)
             if match:
-                return int(float(match.group(1)))  # Convert to int for periods
-        return 18  # Default fallback
+                num = float(match.group(1))
+                if value_type == 'int':
+                    return int(num)
+                elif value_type == 'float':
+                    return num
+                else:  # auto - return int if no decimal
+                    return int(num) if num == int(num) else num
+        
+        return default
+    
+    def extract_numeric_value(self, value_str):
+        """Extract integer value from configuration string (legacy wrapper)"""
+        return self._extract_value(value_str, 'int', default=18)
     
     def extract_float_value(self, value_str):
-        """Extract float value from configuration string (for multipliers)"""
-        if isinstance(value_str, (int, float)):
-            return float(value_str)
-        if isinstance(value_str, str):
-            # Remove common characters and extract number
-            import re
-            match = re.search(r'(\d+(?:\.\d+)?)', value_str)
-            if match:
-                return float(match.group(1))
-        return 1.5  # Default fallback
+        """Extract float value from configuration string (legacy wrapper)"""
+        return self._extract_value(value_str, 'float', default=1.5)
     
     def extract_bool_value(self, value):
-        """Extract boolean value from configuration string"""
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return bool(value)
-        if isinstance(value, str):
-            return value.lower() in ('true', '1', 'yes', 'on')
-        return False
+        """Extract boolean value from configuration string (legacy wrapper)"""
+        return self._extract_value(value, 'bool', default=False)
     
     def _is_in_trading_time_range(self, dt, config):
         """Check if current time is within trading hours (matching original strategy)"""
