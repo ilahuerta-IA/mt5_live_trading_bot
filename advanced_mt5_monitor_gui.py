@@ -115,7 +115,7 @@ ASSET_ALLOCATIONS = {
 DEFAULT_RISK_PERCENT = 0.01  # 1% of allocated capital (configurable)
 
 # Application Version
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.3"
 
 # ==========
 # CRITICAL PARAMETERS - NO DEFAULTS ALLOWED
@@ -1719,11 +1719,16 @@ class AdvancedMT5TradingMonitorGUI:
             # Check range
             if angle < min_angle or angle > max_angle:
                 self.terminal_log(
-                    f"[X] {symbol} {direction}: Angle {angle:.1f} deg outside range [{min_angle:.1f} deg, {max_angle:.1f} deg]", 
+                    f"[X] {symbol} {direction}: Angle {angle:.2f}° outside range [{min_angle:.1f}°, {max_angle:.1f}°]", 
                     "WARNING", critical=True
                 )
                 return False
             
+            # Log angle value when passing (v1.2.1 enhancement)
+            self.terminal_log(
+                f"   📐 {symbol}: Angle={angle:.2f}° (range [{min_angle:.1f}°, {max_angle:.1f}°]) → ✅ PASS", 
+                "INFO", critical=True
+            )
             return True
             
         except Exception as e:
@@ -1992,6 +1997,78 @@ class AdvancedMT5TradingMonitorGUI:
         except Exception as e:
             self.terminal_log(f"[X] Time filter error: {str(e)}", "ERROR", critical=True)
             return True # Fail safe: allow trade if filter fails
+    
+    def check_crossover_at_candle(self, symbol, df, candle_idx, config):
+        """Check for EMA crossover at a specific candle index.
+        
+        Used for Global Invalidation check during GAP processing.
+        Returns tuple: (has_bullish_crossover, has_bearish_crossover)
+        
+        Args:
+            symbol: Trading symbol
+            df: DataFrame with OHLC data (forming candle already removed)
+            candle_idx: Index of the candle to check in df
+            config: Strategy configuration dictionary
+        
+        Returns:
+            (bullish_crossover: bool, bearish_crossover: bool)
+        """
+        try:
+            # Need at least 2 candles up to this index to detect crossover
+            if candle_idx < 1 or candle_idx >= len(df):
+                return (False, False)
+            
+            # Get EMA periods from config
+            fast_period = self.extract_numeric_value(config.get('ema_fast_length', '18'))
+            medium_period = self.extract_numeric_value(config.get('ema_medium_length', '18'))
+            slow_period = self.extract_numeric_value(config.get('ema_slow_length', '50'))
+            confirm_period = 1  # Confirm EMA is always 1-period (close price)
+            
+            # Calculate EMAs on data up to and including this candle
+            df_slice = df.iloc[:candle_idx + 1]
+            
+            if len(df_slice) < max(fast_period, medium_period, slow_period) + 5:
+                return (False, False)  # Not enough data for EMA calculation
+            
+            ema_confirm_series = df_slice['close'].ewm(span=confirm_period).mean()
+            ema_fast_series = df_slice['close'].ewm(span=fast_period).mean()
+            ema_medium_series = df_slice['close'].ewm(span=medium_period).mean()
+            ema_slow_series = df_slice['close'].ewm(span=slow_period).mean()
+            
+            # Get current and previous EMA values
+            confirm_ema = ema_confirm_series.iloc[-1]
+            fast_ema = ema_fast_series.iloc[-1]
+            medium_ema = ema_medium_series.iloc[-1]
+            slow_ema = ema_slow_series.iloc[-1]
+            
+            prev_confirm = ema_confirm_series.iloc[-2]
+            prev_fast = ema_fast_series.iloc[-2]
+            prev_medium = ema_medium_series.iloc[-2]
+            prev_slow = ema_slow_series.iloc[-2]
+            
+            # Detect BULLISH crossovers (confirm EMA crosses ABOVE)
+            bullish_crossover = False
+            if confirm_ema > fast_ema and prev_confirm <= prev_fast:
+                bullish_crossover = True
+            if confirm_ema > medium_ema and prev_confirm <= prev_medium:
+                bullish_crossover = True
+            if confirm_ema > slow_ema and prev_confirm <= prev_slow:
+                bullish_crossover = True
+            
+            # Detect BEARISH crossovers (confirm EMA crosses BELOW)
+            bearish_crossover = False
+            if confirm_ema < fast_ema and prev_confirm >= prev_fast:
+                bearish_crossover = True
+            if confirm_ema < medium_ema and prev_confirm >= prev_medium:
+                bearish_crossover = True
+            if confirm_ema < slow_ema and prev_confirm >= prev_slow:
+                bearish_crossover = True
+            
+            return (bullish_crossover, bearish_crossover)
+            
+        except Exception as e:
+            self.terminal_log(f"[X] {symbol}: Error checking crossover at candle: {str(e)}", "ERROR", critical=True)
+            return (False, False)
             
     def detect_ema_crossovers(self, symbol, indicators, df):
         """Detect EMA crossovers ONLY ON CLOSED CANDLES (matching Backtrader behavior)
@@ -2703,6 +2780,22 @@ class AdvancedMT5TradingMonitorGUI:
         config = self.strategy_configs.get(symbol, {})
         
         # ==========
+        # v1.2.1 FIX: Detect orphan positions on startup
+        # If there's an open position but state is not IN_TRADE, sync state
+        # ==========
+        if entry_state != 'IN_TRADE':
+            positions = mt5.positions_get(symbol=symbol)  # type: ignore
+            if positions is not None and len(positions) > 0:
+                # Found open position but state doesn't reflect it
+                self.terminal_log(f"🔄 {symbol}: Detected ORPHAN POSITION (Ticket #{positions[0].ticket}) - Syncing state to IN_TRADE", 
+                                "WARNING", critical=True)
+                current_state['entry_state'] = 'IN_TRADE'
+                current_state['phase'] = 'IN_TRADE'
+                current_state['armed_direction'] = 'LONG' if positions[0].type == 0 else 'SHORT'
+                entry_state = 'IN_TRADE'
+                return 'IN_TRADE'
+        
+        # ==========
         # EMERGENCY SAFEGUARD: Force disable SHORT arming (all assets LONG only)
         # ==========
         if entry_state == 'ARMED_SHORT':
@@ -2783,24 +2876,41 @@ class AdvancedMT5TradingMonitorGUI:
             bearish_cross = crossover_data.get('bearish_crossover', False)
             
             # ==========
-            # GLOBAL INVALIDATION RULE - Check ARMED states for opposing signals
+            # GLOBAL INVALIDATION RULE (v1.2.3 - FIXED)
+            # Matches Backtrader original: lines 1304-1331
+            # REQUIRES: Opposing crossover AND candle color matches
+            # - ARMED_LONG + bearish crossover + RED candle = INVALIDATE
+            # - ARMED_SHORT + bullish crossover + GREEN candle = INVALIDATE
             # ==========
-            # CRITICAL: Reset on opposing crossover REGARDLESS of short_enabled
-            # Original strategy (Line 1551-1583) always resets on opposing signal
             if entry_state in ['ARMED_LONG', 'ARMED_SHORT']:
                 opposing_signal = False
                 
-                # ARMED_LONG: Reset if bearish crossover detected (even if shorts disabled)
-                if entry_state == 'ARMED_LONG' and bearish_cross:
+                # Get last closed candle color
+                last_closed_bearish = False
+                last_closed_bullish = False
+                if len(df) >= 1:
+                    last_row = df.iloc[-1]
+                    last_closed_bearish = last_row['close'] < last_row['open']
+                    last_closed_bullish = last_row['close'] > last_row['open']
+                
+                # ARMED_LONG: Reset if bearish crossover + RED candle
+                if entry_state == 'ARMED_LONG' and bearish_cross and last_closed_bearish:
                     opposing_signal = True
-                    self.terminal_log(f" {symbol}: GLOBAL INVALIDATION - Bearish crossover detected in ARMED_LONG", 
+                    self.terminal_log(f"⛔ {symbol}: GLOBAL INVALIDATION - Bearish crossover + RED candle in ARMED_LONG", 
                                     "WARNING", critical=True)
                 
-                # ARMED_SHORT: Reset if bullish crossover detected
-                elif entry_state == 'ARMED_SHORT' and bullish_cross:
+                # ARMED_SHORT: Reset if bullish crossover + GREEN candle
+                elif entry_state == 'ARMED_SHORT' and bullish_cross and last_closed_bullish:
                     opposing_signal = True
-                    self.terminal_log(f" {symbol}: GLOBAL INVALIDATION - Bullish crossover detected in ARMED_SHORT", 
+                    self.terminal_log(f"⛔ {symbol}: GLOBAL INVALIDATION - Bullish crossover + GREEN candle in ARMED_SHORT", 
                                     "WARNING", critical=True)
+                
+                # Log when crossover detected but candle color doesn't match (no invalidation)
+                elif bearish_cross or bullish_cross:
+                    cross_type = "Bearish" if bearish_cross else "Bullish"
+                    candle_color = "RED" if last_closed_bearish else "GREEN"
+                    self.terminal_log(f"🔍 {symbol}: {cross_type} crossover detected but last candle is {candle_color} - No invalidation", 
+                                    "INFO", critical=True)
                 
                 if opposing_signal:
                     self._reset_entry_state(symbol)
@@ -3061,6 +3171,45 @@ class AdvancedMT5TradingMonitorGUI:
                             candle_time_str = candle_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(candle_time, 'strftime') else str(candle_time)
                             self.terminal_log(f" CHECKING CANDLE #{seq_counter}: {symbol} {armed_direction} | Time: {candle_time_str} | O:{current_open:.5f} H:{current_high:.5f} L:{current_low:.5f} C:{current_close:.5f} | Pullback: {current_count}/{max_candles}", 
                                             "INFO", critical=True)
+                            
+                            # =====================================================
+                            # GLOBAL INVALIDATION CHECK (v1.2.3 - FIXED)
+                            # Check for opposing crossover BEFORE processing pullback
+                            # Matches Backtrader original: lines 1304-1331
+                            # In Backtrader: prev_bear = self.data.close[-1] < self.data.open[-1]
+                            # This refers to the CURRENT candle being processed, NOT the previous one
+                            # =====================================================
+                            candle_position = df.index.get_loc(idx) if idx in df.index else None
+                            if candle_position is not None:
+                                bullish_cross, bearish_cross = self.check_crossover_at_candle(symbol, df, candle_position, config)
+                                
+                                # Check CURRENT candle color for Global Invalidation rule
+                                # In Backtrader: prev_bear = self.data.close[-1] < self.data.open[-1]
+                                # The -1 index refers to the most recently CLOSED candle (current in our loop)
+                                current_candle_bearish = current_close < current_open  # Already have these values
+                                current_candle_bullish = current_close > current_open
+                                
+                                # ARMED_LONG: Invalidate if bearish crossover + current candle is red
+                                if armed_direction == 'LONG' and bearish_cross and current_candle_bearish:
+                                    self.terminal_log(f"⛔ {symbol}: GLOBAL INVALIDATION at {candle_time_str} - Bearish crossover + RED candle during ARMED_LONG", 
+                                                    "WARNING", critical=True)
+                                    self._reset_entry_state(symbol)
+                                    return 'SCANNING'
+                                
+                                # ARMED_SHORT: Invalidate if bullish crossover + current candle is green
+                                elif armed_direction == 'SHORT' and bullish_cross and current_candle_bullish:
+                                    self.terminal_log(f"⛔ {symbol}: GLOBAL INVALIDATION at {candle_time_str} - Bullish crossover + GREEN candle during ARMED_SHORT", 
+                                                    "WARNING", critical=True)
+                                    self._reset_entry_state(symbol)
+                                    return 'SCANNING'
+                                
+                                # Log when crossover detected but candle color doesn't match (no invalidation)
+                                elif bearish_cross or bullish_cross:
+                                    cross_type = "Bearish" if bearish_cross else "Bullish"
+                                    candle_color = "RED" if current_candle_bearish else "GREEN"
+                                    self.terminal_log(f"🔍 {symbol}: {cross_type} crossover at {candle_time_str} but candle is {candle_color} - No invalidation", 
+                                                    "INFO", critical=True)
+                            # =====================================================
                             
                             is_pullback_candle = False
                             
